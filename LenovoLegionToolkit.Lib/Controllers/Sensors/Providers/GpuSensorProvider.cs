@@ -28,8 +28,8 @@ public partial class GpuSensorProvider : ISensorProvider
         new(SensorItem.GpuFrequency,       SensorType.Clock,       "Core"),
         new(SensorItem.GpuPower,           SensorType.Power,       ""),
         new(SensorItem.GpuVramTemperature, SensorType.Temperature, "GPU Memory Junction", dgpuOnly: true),
-        new(SensorItem.GpuVramUtilization, SensorType.SmallData,   "D3D Dedicated Memory Used"),
-        new(SensorItem.GpuVramTotal,       SensorType.SmallData,   "GPU Memory Total"),
+        new(SensorItem.GpuVramUtilization, SensorType.Data,        "D3D Dedicated Memory Used"),
+        new(SensorItem.GpuVramTotal,       SensorType.Data,        "GPU Memory Total"),
     ];
 
     private readonly Dictionary<SensorItem, ISensor> _dgpuSensors = [];
@@ -89,8 +89,8 @@ public partial class GpuSensorProvider : ISensorProvider
         sensors[SensorItem.GpuCoreTemperature] ??= gpu.Sensors.FindByKeyword(SensorType.Temperature, TempFallback)!;
         sensors[SensorItem.GpuFrequency] ??= gpu.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Clock)!;
         sensors[SensorItem.GpuPower] ??= gpu.Sensors.FindPowerSensor(PowerFallback)!;
-        sensors[SensorItem.GpuVramUtilization] ??= gpu.Sensors.FirstOrDefault(s => s.SensorType == SensorType.SmallData && s.Name.Contains("Used", StringComparison.OrdinalIgnoreCase))!;
-        sensors[SensorItem.GpuVramTotal] ??= gpu.Sensors.FirstOrDefault(s => s.SensorType == SensorType.SmallData && s.Name.Contains("Total", StringComparison.OrdinalIgnoreCase))!;
+        sensors[SensorItem.GpuVramUtilization] ??= gpu.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Used", StringComparison.OrdinalIgnoreCase))!;
+        sensors[SensorItem.GpuVramTotal] ??= gpu.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Data && s.Name.Contains("Total", StringComparison.OrdinalIgnoreCase))!;
     }
 
     public Dictionary<SensorItem, float> ReadDgpu() => ReadGpu(_dgpuSensors, ref _dgpuVramTotalRaw, dgpu: true);
