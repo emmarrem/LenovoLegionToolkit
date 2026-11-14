@@ -135,7 +135,7 @@ jobs:
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?-arm64$ ]]
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           archive="LenovoLegionToolkit-${TAG%-arm64}-win-arm64.zip"
-          (cd release-artifacts && sha256sum --check "$archive.sha256")
+          (cd release-artifacts && tr -d '\r' < "$archive.sha256" | sha256sum --check)
 
           git fetch ./release-artifacts/release-source.bundle refs/heads/arm64-release-source
           test "$(git rev-parse FETCH_HEAD)" = "$SOURCE_SHA"
