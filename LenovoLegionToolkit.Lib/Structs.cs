@@ -1257,6 +1257,7 @@ public readonly struct Update(Release release)
     public string Title { get; } = release.Name;
     public string Description { get; } = release.Body;
     public DateTimeOffset Date { get; } = release.PublishedAt ?? release.CreatedAt;
+    public string ReleaseUrl { get; } = release.HtmlUrl;
 
     public string? Url { get; } = release.Assets
         .Where(ra => ra.Name.StartsWith("LenovoLegionToolkitSetup", StringComparison.InvariantCultureIgnoreCase) &&

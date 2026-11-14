@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using LenovoLegionToolkit.Lib;
 using LenovoLegionToolkit.Lib.Settings;
@@ -10,6 +11,8 @@ namespace LenovoLegionToolkit.Lib.Utils;
 
 public static class PawnIOHelper
 {
+    public static bool IsSupported => RuntimeInformation.OSArchitecture == Architecture.X64;
+
     private static readonly ApplicationSettings ApplicationSettings = IoCContainer.Resolve<ApplicationSettings>();
 
     private const string REG_KEY_PAWN_IO = @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO";
@@ -34,7 +37,7 @@ public static class PawnIOHelper
 
     public static async Task TryShowPawnIODialogAsync(PawnIOState state, bool disableHardwareSensors = true)
     {
-        if (RequestShowDialogAsync == null)
+        if (!IsSupported || RequestShowDialogAsync == null)
         {
             return;
         }
@@ -113,7 +116,7 @@ public static class PawnIOHelper
 
     public static PawnIOState GetPawnIOState()
     {
-        if (!IsPawnIOInstalled())
+        if (!IsSupported || !IsPawnIOInstalled())
         {
             return PawnIOState.NotInstalled;
         }

@@ -149,6 +149,13 @@ public static partial class Compatibility
     private static MachineInformation? _machineInformation;
     private static FakeMachineInformation? _fakeMachineInformation;
 
+    public static MachineInformation? TryGetMachineInformation() => _machineInformation;
+
+    public static bool IsYogaSlim7x(string vendor, string machineType) =>
+        RuntimeInformation.OSArchitecture == Architecture.Arm64 &&
+        vendor.Equals("LENOVO", StringComparison.OrdinalIgnoreCase) &&
+        machineType.Equals("83ED", StringComparison.OrdinalIgnoreCase);
+
     public static Task<bool> CheckBasicCompatibilityAsync() => WMI.LenovoGameZoneData.ExistsAsync();
 
     public static async Task<(bool isCompatible, MachineInformation machineInformation)> IsCompatibleAsync()
@@ -164,7 +171,8 @@ public static partial class Compatibility
         bool isAllowedModel = AllowedModelsPrefix.Any(prefix =>
             mi.Model.Contains(prefix, StringComparison.InvariantCultureIgnoreCase));
 
-        bool isCompatible = isBasicCompatible || (isAllowedVendor && isAllowedModel);
+        bool isCompatible = isBasicCompatible || (isAllowedVendor && isAllowedModel) ||
+                            IsYogaSlim7x(mi.Vendor, mi.MachineType);
 
         return (isCompatible, mi);
     }
