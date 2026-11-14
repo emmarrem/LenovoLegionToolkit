@@ -77,8 +77,11 @@ jobs:
           if ($unmerged) {
               throw "Resolve upstream merge conflicts on the arm64 branch, then rerun. Files: $($unmerged -join ', ')"
           }
-          git commit --allow-empty -m "Build ARM64 from upstream $($release.tag_name) ($upstreamSha)"
-          $sha = git rev-parse HEAD
+          # Parent the release snapshot on the default branch so the Actions token
+          # adds no workflow changes when it pushes the release tag.
+          $tree = git write-tree
+          $sha = git commit-tree $tree -p $env:GITHUB_SHA -m "Build ARM64 from upstream $($release.tag_name) ($upstreamSha)"
+          git reset --hard $sha
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "version=$version" >> $env:GITHUB_OUTPUT
           "asset=$asset" >> $env:GITHUB_OUTPUT
@@ -97,7 +100,7 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           .\build-arm64.ps1 -Version $env:VERSION -ArchiveName $env:ASSET
-          git bundle create build_arm64/release-source.bundle refs/heads/arm64-release-source
+          git bundle create build_arm64/release-source.bundle refs/heads/arm64-release-source "^${{ github.sha }}"
 
       - uses: actions/upload-artifact@v4
         if: steps.source.outputs.tag != ''
@@ -139,6 +142,7 @@ jobs:
 
           git fetch ./release-artifacts/release-source.bundle refs/heads/arm64-release-source
           test "$(git rev-parse FETCH_HEAD)" = "$SOURCE_SHA"
+          test "$(git rev-parse "$SOURCE_SHA^")" = "$(git rev-parse HEAD)"
           git diff --exit-code HEAD "$SOURCE_SHA" -- .github/workflows
 
           remote_sha=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
