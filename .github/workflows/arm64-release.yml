@@ -1,0 +1,164 @@
+name: ARM64 stable release
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 */6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arm64-stable-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'emmarrem/LenovoLegionToolkit'
+    runs-on: windows-11-arm
+    outputs:
+      tag: ${{ steps.source.outputs.tag }}
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select upstream stable release and merge its source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $upstream = 'LenovoLegionToolkit-Team/LenovoLegionToolkit'
+          $release = gh api "repos/$upstream/releases/latest" | ConvertFrom-Json
+          if ($release.draft -or $release.prerelease -or $release.tag_name -cnotmatch '^v([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?)$') {
+              throw 'The upstream latest release did not resolve to a stable numeric tag.'
+          }
+          $version = $Matches[1]
+          if ($version.Split('.').Length -eq 3) {
+              $version += '.0'
+          }
+          $tag = "$($release.tag_name)-arm64"
+          $asset = "LenovoLegionToolkit-$($release.tag_name)-win-arm64.zip"
+          $published = gh release list --repo $env:GITHUB_REPOSITORY --limit 100 --exclude-drafts --exclude-pre-releases --json tagName | ConvertFrom-Json
+          foreach ($entry in $published) {
+              if ($entry.tagName -cnotmatch '^v([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?)-arm64$') {
+                  continue
+              }
+              $publishedVersion = $Matches[1]
+              if ($publishedVersion.Split('.').Length -eq 3) {
+                  $publishedVersion += '.0'
+              }
+              if ([version]$publishedVersion -ge [version]$version) {
+                  Write-Host "ARM64 $($entry.tagName) is already published."
+                  exit 0
+              }
+          }
+
+          git fetch --no-tags origin refs/heads/arm64:refs/remotes/origin/arm64
+          git fetch --no-tags "https://github.com/$upstream.git" "refs/tags/$($release.tag_name):refs/upstream/arm64-source"
+          $upstreamSha = git rev-parse 'refs/upstream/arm64-source^{commit}'
+          git switch --create arm64-release-source --no-track origin/arm64
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # Keep the fork's workflow files so upstream source never replaces fork automation.
+          $PSNativeCommandUseErrorActionPreference = $false
+          git merge --no-ff --no-commit $upstreamSha
+          $mergeExit = $LASTEXITCODE
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ($mergeExit -ne 0 -and !(Test-Path .git/MERGE_HEAD)) {
+              throw "Could not merge upstream source (git exit $mergeExit)."
+          }
+          git restore --source $env:GITHUB_SHA --staged --worktree -- .github/workflows
+          $unmerged = git diff --name-only --diff-filter=U
+          if ($unmerged) {
+              throw "Resolve upstream merge conflicts on the arm64 branch, then rerun. Files: $($unmerged -join ', ')"
+          }
+          git commit --allow-empty -m "Build ARM64 from upstream $($release.tag_name) ($upstreamSha)"
+          $sha = git rev-parse HEAD
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "asset=$asset" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-dotnet@v5
+        if: steps.source.outputs.tag != ''
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Build and package ARM64
+        if: steps.source.outputs.tag != ''
+        env:
+          VERSION: ${{ steps.source.outputs.version }}
+          ASSET: ${{ steps.source.outputs.asset }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          .\build-arm64.ps1 -Version $env:VERSION -ArchiveName $env:ASSET
+          git bundle create build_arm64/release-source.bundle refs/heads/arm64-release-source
+
+      - uses: actions/upload-artifact@v4
+        if: steps.source.outputs.tag != ''
+        with:
+          name: arm64-release
+          path: |
+            build_arm64/*.zip
+            build_arm64/*.zip.sha256
+            build_arm64/release-source.bundle
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    needs: build
+    if: needs.build.outputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: arm64-release
+          path: release-artifacts
+      - name: Publish stable release with the verified ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          SOURCE_SHA: ${{ needs.build.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?-arm64$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          archive="LenovoLegionToolkit-${TAG%-arm64}-win-arm64.zip"
+          (cd release-artifacts && sha256sum --check "$archive.sha256")
+
+          git fetch ./release-artifacts/release-source.bundle refs/heads/arm64-release-source
+          test "$(git rev-parse FETCH_HEAD)" = "$SOURCE_SHA"
+          git diff --exit-code HEAD "$SOURCE_SHA" -- .github/workflows
+
+          remote_sha=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
+          if [[ -z "$remote_sha" ]]; then
+            git push origin "$SOURCE_SHA:refs/tags/$TAG"
+          elif [[ "$remote_sha" != "$SOURCE_SHA" ]]; then
+            # A previous attempt can leave an unpublished tag behind. Reuse it only
+            # when its source tree matches this build.
+            git fetch origin "refs/tags/$TAG"
+            git diff --exit-code FETCH_HEAD "$SOURCE_SHA"
+          fi
+
+          if ! gh release view "$TAG" --json isDraft > release-state.json; then
+            gh release create "$TAG" --verify-tag --draft \
+              --title "Lenovo Legion Toolkit ${TAG%-arm64} (Windows ARM64)" \
+              --notes-file docs/arm64-release-notes.md
+          elif [[ "$(jq -r .isDraft release-state.json)" != true ]]; then
+            echo "Release $TAG is already public."
+            exit 0
+          fi
+
+          gh release upload "$TAG" "release-artifacts/$archive" "release-artifacts/$archive.sha256" --clobber
+          gh release edit "$TAG" --draft=false --prerelease=false --latest
