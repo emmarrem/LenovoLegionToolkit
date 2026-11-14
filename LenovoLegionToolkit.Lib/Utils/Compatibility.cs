@@ -69,13 +69,11 @@ public static partial class Compatibility
 
         "15ACH",
         "15AHP",
-        "15ALC",
         "15IPH",
         "15AKP",
         "15APH",
         "15ARH",
         "15ARP",
-        "15ASH",
         "15IAH",
         "15IAX",
         "15IHU",
@@ -89,7 +87,6 @@ public static partial class Compatibility
         "14IRP",
         "14AKP",
         "14IRH",
-        "14IAP",
 
         // Chinese variants
         "G5000",
@@ -115,8 +112,7 @@ public static partial class Compatibility
         { "83DG", LegionSeries.Legion_5 }, { "83EW", LegionSeries.Legion_5 }, { "83EG", LegionSeries.Legion_5 },
         { "83JJ", LegionSeries.Legion_5 }, { "82RC", LegionSeries.Legion_5 }, { "82RB", LegionSeries.Legion_5 },
         { "82TB", LegionSeries.Legion_5 }, { "83EF", LegionSeries.Legion_5 }, { "82RE", LegionSeries.Legion_5 },
-        { "82RD", LegionSeries.Legion_5 }, { "83Q7", LegionSeries.Legion_5 }, { "83Q6", LegionSeries.Legion_5 }, { "83RW", LegionSeries.Legion_5 },
-        { "83VK", LegionSeries.Legion_5 },
+        { "82RD", LegionSeries.Legion_5 }, { "83Q7", LegionSeries.Legion_5 }, { "83RW", LegionSeries.Legion_5 },
 
         { "83DH", LegionSeries.Legion_Slim_5 }, { "83EX", LegionSeries.Legion_Slim_5 }, { "82Y5", LegionSeries.Legion_Slim_5 },
         { "82Y9", LegionSeries.Legion_Slim_5 }, { "82YA", LegionSeries.Legion_Slim_5 }, { "83D6", LegionSeries.Legion_Slim_5 },
@@ -126,7 +122,7 @@ public static partial class Compatibility
         { "83NN", LegionSeries.Legion_Pro_5 }, { "82WK", LegionSeries.Legion_Pro_5 }, { "82JQ", LegionSeries.Legion_Pro_5},
 
         { "83KY", LegionSeries.Legion_7 }, { "83FD", LegionSeries.Legion_7 }, { "82UH", LegionSeries.Legion_7 },
-        { "82TD", LegionSeries.Legion_7 }, { "82N6", LegionSeries.Legion_7 }, { "83V9", LegionSeries.Legion_7 },
+        { "82TD", LegionSeries.Legion_7 }, { "82N6", LegionSeries.Legion_7 },
 
         { "83RU", LegionSeries.Legion_Pro_7 }, { "83F5", LegionSeries.Legion_Pro_7 }, { "83DE", LegionSeries.Legion_Pro_7 },
         { "82WR", LegionSeries.Legion_Pro_7 }, { "82WQ", LegionSeries.Legion_Pro_7 }, { "82WS", LegionSeries.Legion_Pro_7 },
@@ -153,21 +149,14 @@ public static partial class Compatibility
     private static MachineInformation? _machineInformation;
     private static FakeMachineInformation? _fakeMachineInformation;
 
+    public static MachineInformation? TryGetMachineInformation() => _machineInformation;
+
+    public static bool IsYogaSlim7x(string vendor, string machineType) =>
+        RuntimeInformation.OSArchitecture == Architecture.Arm64 &&
+        vendor.Equals("LENOVO", StringComparison.OrdinalIgnoreCase) &&
+        machineType.Equals("83ED", StringComparison.OrdinalIgnoreCase);
+
     public static Task<bool> CheckBasicCompatibilityAsync() => WMI.LenovoGameZoneData.ExistsAsync();
-
-    public static bool HasLenovoPowerManagementDevice()
-    {
-        try
-        {
-            _ = Drivers.GetIbmPmDrv();
-
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
 
     public static async Task<(bool isCompatible, MachineInformation machineInformation)> IsCompatibleAsync()
     {
@@ -182,9 +171,8 @@ public static partial class Compatibility
         bool isAllowedModel = AllowedModelsPrefix.Any(prefix =>
             mi.Model.Contains(prefix, StringComparison.InvariantCultureIgnoreCase));
 
-        bool hasLenovoPowerManagementDevice = HasLenovoPowerManagementDevice();
-
-        bool isCompatible = isBasicCompatible || (isAllowedVendor && isAllowedModel) || hasLenovoPowerManagementDevice;
+        bool isCompatible = isBasicCompatible || (isAllowedVendor && isAllowedModel) ||
+                            IsYogaSlim7x(mi.Vendor, mi.MachineType);
 
         return (isCompatible, mi);
     }
@@ -208,8 +196,6 @@ public static partial class Compatibility
     {
         return Task.FromResult(_fakeMachineInformation);
     }
-
-    public static MachineInformation? TryGetMachineInformation() => _machineInformation;
 
     public static async Task<MachineInformation> GetMachineInformationAsync()
     {
@@ -868,5 +854,24 @@ public static partial class Compatibility
 
         lines.Add($"{prefix}{propertyName}: '{value}'");
         return lines;
+    }
+
+    public static async Task PrintControllerVersionAsync()
+    {
+        SensorsController sensorsController = IoCContainer.Resolve<SensorsController>();
+
+        var sensorCtrl = await sensorsController.GetControllerAsync().ConfigureAwait(true);
+        var sensorsControllerTypeName = sensorCtrl?.GetType().Name ?? "Null SensorsController or Result";
+        Log.Instance.Trace($"Using {sensorsControllerTypeName}");
+
+        if (!_machineInformation!.Value.Properties.SupportsGodMode)
+        {
+            return;
+        }
+
+        GodModeController godModeController = IoCContainer.Resolve<GodModeController>();
+
+        var godModePlatform = _machineInformation!.Value.Properties.GodModePlatform?.ToString() ?? "None";
+        Log.Instance.Trace($"Using GodMode platform: {godModePlatform}");
     }
 }

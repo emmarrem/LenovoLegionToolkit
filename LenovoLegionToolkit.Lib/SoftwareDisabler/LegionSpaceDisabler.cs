@@ -4,20 +4,37 @@ namespace LenovoLegionToolkit.Lib.SoftwareDisabler;
 
 public class LegionSpaceDisabler : AbstractSoftwareDisabler
 {
-    protected override IEnumerable<string> ScheduledTasksPaths => [];
+    protected override IEnumerable<string> ScheduledTasksPaths =>
+    [
+        "Lenovo\\LegionSpace",
+        "Lenovo\\SmartEngine"
+    ];
 
     protected override IEnumerable<string> ServiceNames =>
     [
-        "DAService"
+        "DAService",
+        "GAService",
+        "LenovoLightingService",
+        "LenovoSmartService"
     ];
 
     protected override IEnumerable<string> ProcessNames =>
     [
         "Bino3D",
+        "GACapture",
+        "GAController",
+        "GAHighlight",
+        "GAInference",
+        "GAInferOCR",
+        "GAService",
+        "GAWorker",
         "LegionGameWidget",
         "LegionSpace",
-        "LegionSpaceComponent",
-        "LegionSpaceToast",
-        "LSDaemon"
+        "LenovoLighting",
+        "LSDaemon",
+        "SEGameHLEditorWorker",
+        "SEGameTool",
+        "seworker",
+        "SmartEngineHost"
     ];
 }

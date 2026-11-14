@@ -34,9 +34,8 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
         }
     }
 
-    public async Task SetPowerPlanAsync(PowerModeState powerModeState, bool alwaysActivateDefaults = false, GodModeSettingsStore.Preset? preset = null, bool skipThrottle = false, SoftwareStatus? vantageStatus = null)
+    public async Task SetPowerPlanAsync(PowerModeState powerModeState, bool alwaysActivateDefaults = false, GodModeSettingsStore.Preset? preset = null, bool skipThrottle = false)
     {
-        using var immediate = skipThrottle ? _overlayDispatcher.SuppressThrottle() : null;
         await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -67,16 +66,9 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
 
             Log.Instance.Trace($"Power plan to be activated is {powerPlanId} [isDefault={isDefault}]");
 
-            if (!await ShouldSetPowerPlanAsync(alwaysActivateDefaults, isDefault, vantageStatus).ConfigureAwait(false))
+            if (!await ShouldSetPowerPlanAsync(alwaysActivateDefaults, isDefault).ConfigureAwait(false))
             {
                 Log.Instance.Trace($"Power plan {powerPlanId} will not be activated [isDefault={isDefault}]");
-                return;
-            }
-
-            var activePowerPlanGuid = GetActivePowerPlanGuid();
-            if (activePowerPlanGuid == powerPlanId)
-            {
-                await ApplyBalanceOverlayIfNeededAsync(activePowerPlanGuid, powerModeState, isDefault, activeGodModePreset, skipThrottle).ConfigureAwait(false);
                 return;
             }
 
@@ -112,7 +104,7 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
                 return;
             }
 
-            await ApplyBalanceOverlayIfNeededAsync(powerPlanToActivate.Guid, powerModeState, isDefault, activeGodModePreset, skipThrottle).ConfigureAwait(false);
+            await ApplyBalanceOverlayIfNeededAsync(powerPlanToActivate.Guid, powerModeState, isDefault, activeGodModePreset).ConfigureAwait(false);
         }
         finally
         {
@@ -171,9 +163,8 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
         }
     }
 
-    public async Task SetPowerPlanAsync(ITSMode itsMode, bool alwaysActivateDefaults = false, bool skipThrottle = false, GodModeSettingsStore.Preset? preset = null, SoftwareStatus? vantageStatus = null)
+    public async Task SetPowerPlanAsync(ITSMode itsMode, bool alwaysActivateDefaults = false, bool skipThrottle = false)
     {
-        using var immediate = skipThrottle ? _overlayDispatcher.SuppressThrottle() : null;
         await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -185,8 +176,7 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
 
             Log.Instance.Trace($"Activating... [itsMode={itsMode}, alwaysActivateDefaults={alwaysActivateDefaults}]");
 
-            var powerPlanId = preset?.Overrides.TryGetGuid(PowerOverrideKey.PowerPlan)
-                ?? settings.Store.ITSPowerPlans.GetValueOrDefault(itsMode);
+            var powerPlanId = settings.Store.ITSPowerPlans.GetValueOrDefault(itsMode);
 
             var isDefault = false;
 
@@ -200,7 +190,7 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
 
             Log.Instance.Trace($"Power plan to be activated is {powerPlanId} [isDefault={isDefault}]");
 
-            if (!await ShouldSetPowerPlanAsync(alwaysActivateDefaults, isDefault, vantageStatus).ConfigureAwait(false))
+            if (!await ShouldSetPowerPlanAsync(alwaysActivateDefaults, isDefault).ConfigureAwait(false))
             {
                 Log.Instance.Trace($"Power plan {powerPlanId} will not be activated [isDefault={isDefault}]");
                 return;
@@ -223,7 +213,7 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
             {
                 Log.Instance.Trace($"Power plan {powerPlanToActivate.Guid} is already active. [name={powerPlanToActivate.Name}]");
 
-                await ApplyBalanceOverlayIfNeededAsync(powerPlanToActivate.Guid, itsMode, isDefault, preset, skipThrottle).ConfigureAwait(false);
+                await ApplyBalanceOverlayIfNeededAsync(powerPlanToActivate.Guid, itsMode, isDefault, skipThrottle).ConfigureAwait(false);
                 return;
             }
 
@@ -238,7 +228,7 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
                 return;
             }
 
-            await ApplyBalanceOverlayIfNeededAsync(powerPlanToActivate.Guid, itsMode, isDefault, preset, skipThrottle).ConfigureAwait(false);
+            await ApplyBalanceOverlayIfNeededAsync(powerPlanToActivate.Guid, itsMode, isDefault).ConfigureAwait(false);
         }
         finally
         {
@@ -248,7 +238,6 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
 
     public async Task SetBalancedPowerPlanAsync(bool skipThrottle = false)
     {
-        using var immediate = skipThrottle ? _overlayDispatcher.SuppressThrottle() : null;
         await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -288,7 +277,7 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
         }
     }
 
-    private async Task ApplyBalanceOverlayIfNeededAsync(Guid activePowerPlanGuid, ITSMode itsMode, bool isDefault, GodModeSettingsStore.Preset? preset = null, bool skipThrottle = false)
+    private async Task ApplyBalanceOverlayIfNeededAsync(Guid activePowerPlanGuid, ITSMode itsMode, bool isDefault, bool skipThrottle = false)
     {
         if (!PowerPlanExtensions.IsPlanBasedOnBalanced(activePowerPlanGuid))
         {
@@ -307,12 +296,8 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
 
         if (!isDefault)
         {
-            acMode = preset?.Overrides.TryGetEnum<WindowsPowerMode>(PowerOverrideKey.PowerPlanBalanceOnAc)
-                ?? settings.Store.ITSOverrides.GetPowerPlanBalanceOnAc(itsMode)
-                ?? WindowsPowerMode.Balanced;
-            dcMode = preset?.Overrides.TryGetEnum<WindowsPowerMode>(PowerOverrideKey.PowerPlanBalanceOnDc)
-                ?? settings.Store.ITSOverrides.GetPowerPlanBalanceOnDc(itsMode)
-                ?? WindowsPowerMode.Balanced;
+            acMode = settings.Store.ITSOverrides.GetPowerPlanBalanceOnAc(itsMode) ?? WindowsPowerMode.Balanced;
+            dcMode = settings.Store.ITSOverrides.GetPowerPlanBalanceOnDc(itsMode) ?? WindowsPowerMode.Balanced;
         }
         Log.Instance.Trace($"Using per-mode Balance overlay. [itsMode={itsMode}, acMode={acMode}, dcMode={dcMode}]");
 
@@ -335,8 +320,26 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
         }
     }
 
-    private Task ExecuteBalanceOverlayDispatch(Guid guidToApply, Guid acRegistryGuid, Guid dcRegistryGuid) =>
-        WindowsPowerModeController.ApplyOverlayAsync(mainThreadDispatcher, guidToApply, acRegistryGuid, dcRegistryGuid);
+    private Task ExecuteBalanceOverlayDispatch(Guid guidToApply, Guid acRegistryGuid, Guid dcRegistryGuid)
+    {
+        mainThreadDispatcher.Dispatch(() =>
+        {
+            try
+            {
+                WindowsPowerModeController.ApplyActiveOverlayScheme(guidToApply);
+                Log.Instance.Trace($"Balance overlay scheme applied. [guidToApply={guidToApply}]");
+            }
+            catch (Exception ex)
+            {
+                Log.Instance.Trace($"Failed to apply balance overlay scheme.", ex);
+            }
+        });
+
+        WindowsPowerModeController.SetActiveOverlayRegistryForAc(acRegistryGuid);
+        WindowsPowerModeController.SetActiveOverlayRegistryForDc(dcRegistryGuid);
+
+        return Task.CompletedTask;
+    }
 
     public void SetPowerPlanParameter(WindowsPowerPlan windowsPowerPlan, Brightness brightness)
     {
@@ -359,7 +362,7 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
         }
     }
 
-    private async Task<bool> ShouldSetPowerPlanAsync(bool alwaysActivateDefaults, bool isDefault, SoftwareStatus? knownVantageStatus = null)
+    private async Task<bool> ShouldSetPowerPlanAsync(bool alwaysActivateDefaults, bool isDefault)
     {
         if (isDefault && alwaysActivateDefaults)
         {
@@ -367,7 +370,7 @@ public class WindowsPowerPlanController(ApplicationSettings settings, VantageDis
             return true;
         }
 
-        var status = knownVantageStatus ?? await vantageDisabler.GetStatusAsync().ConfigureAwait(false);
+        var status = await vantageDisabler.GetStatusAsync().ConfigureAwait(false);
         if (status is SoftwareStatus.NotFound or SoftwareStatus.Disabled)
         {
             Log.Instance.Trace($"Vantage is not active / disabled [status={status}]");

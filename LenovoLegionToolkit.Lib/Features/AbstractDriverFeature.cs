@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,7 +21,6 @@ public abstract class AbstractDriverFeature<T>(
     where T : struct, Enum, IComparable
 {
     private const int DRIVER_COOLDOWN_MS = 20;
-    private const int SLOW_CALL_THRESHOLD_MS = 25;
 
     protected readonly uint ControlCode = controlCode;
     protected readonly Func<SafeFileHandle> DriverHandle = driverHandleHandle;
@@ -114,20 +112,10 @@ public abstract class AbstractDriverFeature<T>(
             return await CoreAction().ConfigureAwait(false);
         }
 
-        var queueSw = Stopwatch.StartNew();
         await GlobalDriverLock.Queue.WaitAsync().ConfigureAwait(false);
-        queueSw.Stop();
-
         try
         {
-            var callSw = Stopwatch.StartNew();
-            var result = await CoreAction().ConfigureAwait(false);
-            callSw.Stop();
-
-            if (callSw.ElapsedMilliseconds > SLOW_CALL_THRESHOLD_MS)
-                Log.Instance.Trace($"Slow driver call [controlCode=0x{controlCode:X}, queue={queueSw.ElapsedMilliseconds} ms, call={callSw.ElapsedMilliseconds} ms] [feature={GetType().Name}]");
-
-            return result;
+            return await CoreAction().ConfigureAwait(false);
         }
         finally
         {

@@ -19,16 +19,7 @@ public class FanMaxSpeedAutomationStep(ToggleState state)
 
     private readonly GodModeController _godModeController = IoCContainer.Resolve<GodModeController>();
 
-    public async Task<bool> IsSupportedAsync()
-    {
-        if (AppFlags.Instance.Debug)
-        {
-            return true;
-        }
-
-        var mi = await Compatibility.GetMachineInformationAsync().ConfigureAwait(false);
-        return await GetCurrentValueAsync(mi).ConfigureAwait(false) is not null;
-    }
+    public Task<bool> IsSupportedAsync() => Task.FromResult(true);
 
     public Task<ToggleState[]> GetAllStatesAsync() => Task.FromResult(Enum.GetValues<ToggleState>());
 
@@ -40,7 +31,7 @@ public class FanMaxSpeedAutomationStep(ToggleState state)
 
         bool? applied = mi.Properties.GodModePlatform switch
         {
-            GodModePlatform.LegacyLegion => await HandleLegacyAsync(mi).ConfigureAwait(false),
+            GodModePlatform.LegacyLegion => await HandleLegacyAsync().ConfigureAwait(false),
             GodModePlatform.Legion or GodModePlatform.NonGaming => await HandleModernAsync(mi).ConfigureAwait(false),
             _ => null
         };
@@ -49,14 +40,10 @@ public class FanMaxSpeedAutomationStep(ToggleState state)
             await TryUpdatePresetAsync(applied.Value).ConfigureAwait(false);
     }
 
-    private async Task<bool?> HandleLegacyAsync(MachineInformation mi)
+    private async Task<bool> HandleLegacyAsync()
     {
-        var currentValue = await GetCurrentValueAsync(mi).ConfigureAwait(false);
-        if (currentValue is null)
-            return null;
-
-        var currentSpeed = currentValue != 0;
-        var targetState = State switch
+        bool currentSpeed = await WMI.LenovoFanMethod.FanGetFullSpeedAsync().ConfigureAwait(false);
+        bool targetState = State switch
         {
             ToggleState.On => true,
             ToggleState.Off => false,
@@ -70,51 +57,7 @@ public class FanMaxSpeedAutomationStep(ToggleState state)
         return targetState;
     }
 
-    private async Task<bool?> HandleModernAsync(MachineInformation mi)
-    {
-        var idRaw = GetFanFullSpeedId(mi);
-
-        var currentValue = await GetCurrentValueAsync(mi).ConfigureAwait(false);
-        if (currentValue is null)
-            return null;
-
-        var targetValue = State switch
-        {
-            ToggleState.On => 1,
-            ToggleState.Off => 0,
-            ToggleState.Toggle => currentValue == 0 ? 1 : 0,
-            _ => currentValue.Value
-        };
-
-        if (currentValue != targetValue)
-            await WMI.LenovoOtherMethod.SetFeatureValueAsync(idRaw, targetValue).ConfigureAwait(false);
-
-        return targetValue != 0;
-    }
-
-    private static async Task<int?> GetCurrentValueAsync(MachineInformation mi)
-    {
-        try
-        {
-            switch (mi.Properties.GodModePlatform)
-            {
-                case GodModePlatform.LegacyLegion:
-                    return await WMI.LenovoFanMethod.FanGetFullSpeedAsync().ConfigureAwait(false) ? 1 : 0;
-                case GodModePlatform.Legion:
-                case GodModePlatform.NonGaming:
-                    return await WMI.LenovoOtherMethod.GetFeatureValueAsync(GetFanFullSpeedId(mi)).ConfigureAwait(false);
-                default:
-                    return null;
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Instance.Trace($"Failed to read Fan Full Speed. [platform={mi.Properties.GodModePlatform}]", ex);
-            return null;
-        }
-    }
-
-    private static uint GetFanFullSpeedId(MachineInformation mi)
+    private async Task<bool> HandleModernAsync(MachineInformation mi)
     {
         uint fanFullSpeedId = mi.Properties.GodModePlatform switch
         {
@@ -122,7 +65,22 @@ public class FanMaxSpeedAutomationStep(ToggleState state)
             _ => (uint)CapabilityID.FanFullSpeed,
         };
 
-        return fanFullSpeedId & 0xFFFF00FF;
+        uint idRaw = fanFullSpeedId & 0xFFFF00FF;
+
+        var currentValue = await WMI.LenovoOtherMethod.GetFeatureValueAsync(idRaw).ConfigureAwait(false);
+
+        var targetValue = State switch
+        {
+            ToggleState.On => 1,
+            ToggleState.Off => 0,
+            ToggleState.Toggle => currentValue == 0 ? 1 : 0,
+            _ => currentValue
+        };
+
+        if (currentValue != targetValue)
+            await WMI.LenovoOtherMethod.SetFeatureValueAsync(idRaw, targetValue).ConfigureAwait(false);
+
+        return targetValue != 0;
     }
 
     private async Task TryUpdatePresetAsync(bool targetState)

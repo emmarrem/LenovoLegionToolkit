@@ -23,7 +23,6 @@ public partial class SettingsAppearanceControl
 {
     private readonly ApplicationSettings _settings = IoCContainer.Resolve<ApplicationSettings>();
     private readonly ThemeManager _themeManager = IoCContainer.Resolve<ThemeManager>();
-    private readonly GPUController _gpuController = IoCContainer.Resolve<GPUController>();
 
     private bool _isRefreshing;
 
@@ -35,14 +34,8 @@ public partial class SettingsAppearanceControl
 
     private void ThemeManager_ThemeApplied(object? sender, EventArgs e)
     {
-        if (_isRefreshing)
-            return;
-
-        UpdateAccentColorPicker();
-
-        _isRefreshing = true;
-        _themeComboBox.SelectItem(_settings.Store.Theme);
-        _isRefreshing = false;
+        if (!_isRefreshing)
+            UpdateAccentColorPicker();
     }
 
     public async Task RefreshAsync()
@@ -92,7 +85,7 @@ public partial class SettingsAppearanceControl
         {
             _gpuPreferenceComboBox.Visibility = Visibility.Visible;
             var exePath = Environment.ProcessPath ?? string.Empty;
-            var pref = _gpuController.GetGpuPreference(exePath);
+            var pref = IoCContainer.Resolve<GPUController>().GetGpuPreference(exePath);
             _gpuPreferenceComboBox.SelectedIndex = pref switch
             {
                 GpuPreference.Integrated => 1,
@@ -328,11 +321,7 @@ public partial class SettingsAppearanceControl
             _ => GpuPreference.Default
         };
 
-        if (!_gpuController.SetGpuPreference(exePath, preference))
-        {
-            SnackbarHelper.Show(Resource.Error, Resource.SettingsPage_HWA_GPUPreference_Error_Message, SnackbarType.Error);
-            return;
-        }
+        IoCContainer.Resolve<GPUController>().SetGpuPreference(exePath, preference);
 
         SnackbarHelper.Show(Resource.SettingsPage_HardwareAcceleration_Title, Resource.SettingsPage_RestartRequired_Message, SnackbarType.Success);
     }

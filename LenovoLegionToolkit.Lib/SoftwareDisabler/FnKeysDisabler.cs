@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using LenovoLegionToolkit.Lib.System;
 
@@ -35,15 +34,12 @@ public class FnKeysDisabler : AbstractSoftwareDisabler
         {
             foreach (var process in Process.GetProcessesByName("utility"))
             {
-                using (process)
-                {
-                    var description = process.MainModule?.FileVersionInfo.FileDescription;
-                    if (description is null)
-                        continue;
+                var description = process.MainModule?.FileVersionInfo.FileDescription;
+                if (description is null)
+                    continue;
 
-                    if (description.Equals("Lenovo Hotkeys", StringComparison.InvariantCultureIgnoreCase))
-                        result.Add(process.ProcessName);
-                }
+                if (description.Equals("Lenovo Hotkeys", StringComparison.InvariantCultureIgnoreCase))
+                    result.Add(process.ProcessName);
             }
         }
         catch {  /* Ignore */ }
@@ -59,22 +55,15 @@ public class FnKeysDisabler : AbstractSoftwareDisabler
         {
             foreach (var process in Process.GetProcessesByName("utility"))
             {
-                using (process)
-                {
-                    var description = process.MainModule?.FileVersionInfo.FileDescription;
-                    if (description is null)
-                        continue;
+                var description = process.MainModule?.FileVersionInfo.FileDescription;
+                if (description is null)
+                    continue;
 
-                    if (!description.Equals("Lenovo Hotkeys", StringComparison.InvariantCultureIgnoreCase))
-                        continue;
+                if (!description.Equals("Lenovo Hotkeys", StringComparison.InvariantCultureIgnoreCase))
+                    continue;
 
-                    process.Kill();
-
-                    using (var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
-                    {
-                        await process.WaitForExitAsync(cancellationTokenSource.Token).ConfigureAwait(false);
-                    }
-                }
+                process.Kill();
+                await process.WaitForExitAsync().ConfigureAwait(false);
             }
         }
         catch {  /* Ignore */ }

@@ -1,7 +1,10 @@
-﻿using LenovoLegionToolkit.Lib;
+﻿using System.Threading.Tasks;
+using LenovoLegionToolkit.Lib;
+using LenovoLegionToolkit.Lib.Features;
 using LenovoLegionToolkit.Lib.Listeners;
 using LenovoLegionToolkit.WPF.Resources;
 using Wpf.Ui.Common;
+using Wpf.Ui.Controls;
 
 namespace LenovoLegionToolkit.WPF.Controls.Dashboard;
 
@@ -20,6 +23,13 @@ public class TouchpadLockControl : AbstractToggleFeatureCardControl<TouchpadLock
         Subtitle = Resource.TouchpadLockControl_Message;
 
         _listener.Changed += Listener_Changed;
+    }
+
+    protected override async Task OnStateChange(ToggleSwitch toggle, IFeature<TouchpadLockState> feature)
+    {
+        await _listener.StopAsync();
+        await base.OnStateChange(toggle, feature);
+        await _listener.StartAsync();
     }
 
     private void Listener_Changed(object? sender, DriverKeyListener.ChangedEventArgs e) => Dispatcher.Invoke(async () =>

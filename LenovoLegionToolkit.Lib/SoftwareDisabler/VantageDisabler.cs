@@ -1,6 +1,4 @@
-using System;
 using System.Collections.Generic;
-using System.IO;
 
 namespace LenovoLegionToolkit.Lib.SoftwareDisabler;
 
@@ -25,6 +23,7 @@ public class VantageDisabler : AbstractSoftwareDisabler
 
     protected override IEnumerable<string> ProcessNames =>
     [
+        "BatteryWidgetHost",
         "BGHelper",
         "Lenovo.Modern.ImController",
         "Lenovo.Vantage",
@@ -32,12 +31,4 @@ public class VantageDisabler : AbstractSoftwareDisabler
         "QSHelper",
         "ScheduleEventAction"
     ];
-
-    protected override IEnumerable<string> StartupEntryNames => ["LenovoVantageToolbar", "LenovoVantage"];
-
-    protected override IEnumerable<string> StartupEntryRoots =>
-    [
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Lenovo", "Vantage")
-    ];
-
 }

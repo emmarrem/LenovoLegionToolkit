@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
 using LenovoLegionToolkit.Lib;
-using LenovoLegionToolkit.Lib.Settings;
 using LenovoLegionToolkit.WPF.Resources;
 using System.Windows.Media;
 
@@ -61,13 +60,13 @@ public partial class OsdPanelWindow : OsdWindowBase
             { _fpsGroup, ([OsdItem.Fps, OsdItem.LowFps, OsdItem.FrameTime], _separatorFps) },
 
             // CPU
-            { _cpuGroup, ([OsdItem.CpuFrequency, OsdItem.CpuPCoreFrequency, OsdItem.CpuECoreFrequency, OsdItem.CpuUtilization, OsdItem.CpuTemperature, OsdItem.CpuPower, OsdItem.CpuVoltage, OsdItem.CpuFan], _separatorCpu) },
+            { _cpuGroup, ([OsdItem.CpuFrequency, OsdItem.CpuPCoreFrequency, OsdItem.CpuECoreFrequency, OsdItem.CpuUtilization, OsdItem.CpuTemperature, OsdItem.CpuPower, OsdItem.CpuVoltage, OsdItem.CpuFan], null) },
 
             // GPU
-            { _gpuGroup, ([OsdItem.GpuFrequency, OsdItem.GpuUtilization, OsdItem.GpuTemperature, OsdItem.GpuVramUtilization, OsdItem.GpuVramTemperature, OsdItem.GpuPower, OsdItem.GpuFan], _separatorGpu) },
+            { _gpuGroup, ([OsdItem.GpuFrequency, OsdItem.GpuUtilization, OsdItem.GpuTemperature, OsdItem.GpuVramUtilization, OsdItem.GpuVramTemperature, OsdItem.GpuPower, OsdItem.GpuFan], null) },
 
             // RAM
-            { _memoryGroup, ([OsdItem.MemoryUtilization, OsdItem.MemoryTemperature], _separatorMemory) },
+            { _memoryGroup, ([OsdItem.MemoryUtilization, OsdItem.MemoryTemperature], null) },
 
             // Storage / Motherboard
             { _pchGroup, ([OsdItem.Disk1Temperature, OsdItem.Disk2Temperature, OsdItem.PchTemperature, OsdItem.PchFan], null) }
@@ -81,10 +80,16 @@ public partial class OsdPanelWindow : OsdWindowBase
         InitOsd();
     }
 
-    protected override OsdPosition? SavedPosition
+    protected override double? SavedPositionX
     {
-        get => _OsdSettings.Store.PanelPosition;
-        set => _OsdSettings.Store.PanelPosition = value;
+        get => _OsdSettings.Store.PanelPositionX;
+        set => _OsdSettings.Store.PanelPositionX = value;
+    }
+
+    protected override double? SavedPositionY
+    {
+        get => _OsdSettings.Store.PanelPositionY;
+        set => _OsdSettings.Store.PanelPositionY = value;
     }
 
     protected override void OnAmdDeviceDetected()
@@ -132,11 +137,6 @@ public partial class OsdPanelWindow : OsdWindowBase
         _memHeader.Foreground = _categoryBrush;
         _pchHeader.Foreground = _categoryBrush;
 
-        _separatorFps.Background = _categoryBrush;
-        _separatorCpu.Background = _categoryBrush;
-        _separatorGpu.Background = _categoryBrush;
-        _separatorMemory.Background = _categoryBrush;
-
         ApplyCornerRadius(_rootBorder);
     }
 
@@ -144,7 +144,7 @@ public partial class OsdPanelWindow : OsdWindowBase
     {
         if (double.IsNaN(ActualWidth) || ActualWidth <= 0) return;
 
-        var workArea = CurrentWorkArea;
+        var workArea = SystemParameters.WorkArea;
 
         Left = workArea.Left;
         Top = workArea.Top + (workArea.Height - ActualHeight) / 2;

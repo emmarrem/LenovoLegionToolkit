@@ -63,8 +63,6 @@ public abstract class AbstractWMIListener<TEventArgs, TValue, TRawValue>(Func<Ac
 
     protected abstract Task OnChangedAsync(TValue value);
 
-    protected virtual bool RaiseChangedAutomatically => true;
-
     protected void RaiseChanged(TValue value) => Changed?.Invoke(this, GetEventArgs(value));
 
     private async void Handler(TRawValue properties)
@@ -76,10 +74,7 @@ public abstract class AbstractWMIListener<TEventArgs, TValue, TRawValue>(Func<Ac
             Log.Instance.Trace($"Event received. [value={value}, listener={GetType().Name}]");
 
             await OnChangedAsync(value).ConfigureAwait(false);
-            if (RaiseChangedAutomatically)
-            {
-                RaiseChanged(value);
-            }
+            RaiseChanged(value);
         }
         catch (Exception ex)
         {

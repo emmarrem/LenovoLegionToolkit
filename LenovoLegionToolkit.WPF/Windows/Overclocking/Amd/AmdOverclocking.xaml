@@ -205,10 +205,7 @@
         <ui:TitleBar
             Title="{x:Static resources:Resource.AmdOverclocking_Title}"
             Grid.Row="0"
-            Margin="5"
-            CanMaximize="false"
-            ShowMaximize="false"
-            ShowMinimize="false" />
+            Margin="5" />
 
         <StackPanel Grid.Row="1" Margin="24,0,24,10">
             <ui:InfoBar

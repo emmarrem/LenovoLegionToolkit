@@ -3,14 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Management;
 using System.Runtime.InteropServices;
-using System.Threading;
 using System.Threading.Tasks;
 using LenovoLegionToolkit.Lib.Extensions;
 using LenovoLegionToolkit.Lib.Features;
 using LenovoLegionToolkit.Lib.Resources;
 using LenovoLegionToolkit.Lib.Settings;
 using LenovoLegionToolkit.Lib.SoftwareDisabler;
-using LenovoLegionToolkit.Lib.System;
 using LenovoLegionToolkit.Lib.System.Management;
 using LenovoLegionToolkit.Lib.Utils;
 using NvAPIWrapper.GPU;
@@ -29,7 +27,6 @@ public class GodModeController(
 
     public event EventHandler<Guid>? PresetChanged;
 
-    private readonly SemaphoreSlim _applyLock = new(1, 1);
     private GodModePlatformConfiguration? _config;
     private MachineInformation? _mi;
     private bool _hasCapabilityErrors;
@@ -37,23 +34,6 @@ public class GodModeController(
     public bool HasCapabilityErrors() => _hasCapabilityErrors;
 
     #region Software Disablers
-
-    public async Task<SoftwareStatuses> GetSoftwareStatusesAsync()
-    {
-        var config = await GetConfigAsync().ConfigureAwait(false);
-        var mi = await GetMachineInformationAsync().ConfigureAwait(false);
-        var needsSpace = config.Platform == GodModePlatform.Legion && mi.SmartFanVersion >= 8;
-        var needsZone = config.Platform != GodModePlatform.NonGaming;
-
-        var vantageStatus = await vantageDisabler.GetStatusAsync().ConfigureAwait(false);
-        var legionSpaceStatus = needsSpace ? await legionSpaceDisabler.GetStatusAsync().ConfigureAwait(false) : SoftwareStatus.NotFound;
-        var legionZoneStatus = needsZone ? await legionZoneDisabler.GetStatusAsync().ConfigureAwait(false) : SoftwareStatus.NotFound;
-
-        return new(
-            Vantage: vantageStatus,
-            LegionSpace: legionSpaceStatus,
-            LegionZone: legionZoneStatus);
-    }
 
     public Task<bool> NeedsVantageDisabledAsync() => Task.FromResult(true);
 
@@ -194,36 +174,24 @@ public class GodModeController(
     #region Apply State
 
     public async Task ApplyStateAsync()
-        => await ApplyStateWithResultAsync().ConfigureAwait(false);
-
-    public async Task<(bool Applied, SoftwareStatuses Software)> ApplyStateWithResultAsync(GodModeState? state = null)
     {
-        await _applyLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (state.HasValue)
-                await SetStateAsync(state.Value).ConfigureAwait(false);
+        var config = await GetConfigAsync().ConfigureAwait(false);
 
-            var config = await GetConfigAsync().ConfigureAwait(false);
-            var statuses = await GetSoftwareStatusesAsync().ConfigureAwait(false);
-            var applied = config.Platform == GodModePlatform.LegacyLegion
-                ? await ApplyStateLegacyAsync(statuses).ConfigureAwait(false)
-                : await ApplyStateDataDrivenAsync(config, statuses).ConfigureAwait(false);
-
-            return (applied, statuses);
-        }
-        finally
+        if (config.Platform == GodModePlatform.LegacyLegion)
         {
-            _applyLock.Release();
+            await ApplyStateLegacyAsync().ConfigureAwait(false);
+            return;
         }
+
+        await ApplyStateDataDrivenAsync(config).ConfigureAwait(false);
     }
 
-    private async Task<bool> ApplyStateLegacyAsync(SoftwareStatuses statuses)
+    private async Task ApplyStateLegacyAsync()
     {
-        if (statuses.LegionZone == SoftwareStatus.Enabled)
+        if (await legionZoneDisabler.GetStatusAsync().ConfigureAwait(false) == SoftwareStatus.Enabled)
         {
             Log.Instance.Trace($"Can't correctly apply state when Legion Zone is running.");
-            return false;
+            return;
         }
 
         Log.Instance.Trace($"Applying state...");
@@ -261,9 +229,8 @@ public class GodModeController(
 
         await ApplyFanLegacyAsync(fanTable, fanFullSpeed).ConfigureAwait(false);
 
-        await RaisePresetChanged(presetId, statuses.Vantage).ConfigureAwait(false);
+        await RaisePresetChanged(presetId).ConfigureAwait(false);
         Log.Instance.Trace($"State applied. [name={preset.Name}, id={presetId}]");
-        return true;
     }
 
     private static async Task TryApplyAsync(string name, StepperValue? value, Func<int, Task> set, bool rethrow)
@@ -331,33 +298,31 @@ public class GodModeController(
         }
     }
 
-    private async Task<bool> ApplyStateDataDrivenAsync(GodModePlatformConfiguration config, SoftwareStatuses statuses)
+    private async Task ApplyStateDataDrivenAsync(GodModePlatformConfiguration config)
     {
         var mi = await GetMachineInformationAsync().ConfigureAwait(false);
 
-        var (vantageStatus, legionSpaceStatus, legionZoneStatus) = statuses;
-
-        if (vantageStatus == SoftwareStatus.Enabled)
+        if (await vantageDisabler.GetStatusAsync().ConfigureAwait(false) == SoftwareStatus.Enabled)
         {
             Log.Instance.Trace($"Can't correctly apply state when Vantage is running.");
-            return false;
+            return;
         }
 
         if (config.Platform == GodModePlatform.Legion)
         {
             if (mi.SmartFanVersion >= 8)
             {
-                if (legionSpaceStatus == SoftwareStatus.Enabled)
+                if (await legionSpaceDisabler.GetStatusAsync().ConfigureAwait(false) == SoftwareStatus.Enabled)
                 {
                     Log.Instance.Trace($"Can't correctly apply state when Legion Space is running.");
-                    return false;
+                    return;
                 }
             }
 
-            if (legionZoneStatus == SoftwareStatus.Enabled)
+            if (await legionZoneDisabler.GetStatusAsync().ConfigureAwait(false) == SoftwareStatus.Enabled)
             {
                 Log.Instance.Trace($"Can't correctly apply state when Legion Zone is running.");
-                return false;
+                return;
             }
         }
 
@@ -434,9 +399,8 @@ public class GodModeController(
             await ApplyOcIfNeededAsync(preset).ConfigureAwait(false);
         }
 
-        await RaisePresetChanged(presetId, vantageStatus).ConfigureAwait(false);
+        await RaisePresetChanged(presetId).ConfigureAwait(false);
         Log.Instance.Trace($"State applied. [name={preset.Name}, id={presetId}]");
-        return true;
     }
 
     private async Task ApplyFanSettingsAsync(GodModePlatformConfiguration config, FanTable fanTable, bool fanFullSpeed)
@@ -470,7 +434,7 @@ public class GodModeController(
             try
             {
                 Log.Instance.Trace($"Waiting for power mode set successfully...");
-                await Task.Delay(TimeSpan.FromMilliseconds(10)).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromMilliseconds(500)).ConfigureAwait(false);
 
                 Log.Instance.Trace($"Applying Fan Table {fanTable}...");
                 if (!await IsValidFanTableAsync(fanTable).ConfigureAwait(false))
@@ -500,8 +464,7 @@ public class GodModeController(
             if (preset.PrecisionBoostOverdriveScaler is { } pboScaler)
             {
                 Log.Instance.Trace($"Applying PrecisionBoostOverdriveScaler: {pboScaler}...");
-                var scaler = Math.Clamp(pboScaler.Value, 1, 10);
-                await WMI.LenovoCpuMethod.CPUSetOCDataAsync(17, (uint)CPUOverclockingID.PrecisionBoostOverdriveScaler, scaler).ConfigureAwait(false);
+                await WMI.LenovoCpuMethod.CPUSetOCDataAsync(17, (uint)CPUOverclockingID.PrecisionBoostOverdriveScaler, pboScaler.Value).ConfigureAwait(false);
             }
             if (preset.PrecisionBoostOverdriveBoostFrequency is { } pboFreq)
             {
@@ -735,7 +698,7 @@ public class GodModeController(
         if (!isAmdDevice)
             return (null, null, null);
         return (
-            new StepperValue(1, 1, 10, 1, [], 1),
+            new StepperValue(0, 0, 7, 1, [], 0),
             new StepperValue(0, 0, 200, 1, [], 0),
             new StepperValue(0, 0, 20, 1, [], 0)
         );
@@ -809,14 +772,6 @@ public class GodModeController(
 
     public async Task RestoreDefaultsInOtherPowerModeAsync(PowerModeState state)
     {
-        var mi = await GetMachineInformationAsync().ConfigureAwait(false);
-
-        if (!mi.Properties.SupportsGodMode)
-        {
-            Log.Instance.Trace($"God Mode not supported. Skipping restoring defaults for {state}...");
-            return;
-        }
-
         var config = await GetConfigAsync().ConfigureAwait(false);
 
         if (config.Platform == GodModePlatform.LegacyLegion)
@@ -962,7 +917,7 @@ public class GodModeController(
                     GPUToCPUDynamicBoost = GetDefVal(allCapabilityData, CapabilityID.GPUToCPUDynamicBoost, powerMode),
                     FanTable = await GetDefaultFanTableAsync().ConfigureAwait(false),
                     FanFullSpeed = false,
-                    PrecisionBoostOverdriveScaler = 1,
+                    PrecisionBoostOverdriveScaler = 0,
                     PrecisionBoostOverdriveBoostFrequency = 0,
                     AllCoreCurveOptimizer = 0,
                     EnableAllCoreCurveOptimizer = false,
@@ -1339,7 +1294,7 @@ public class GodModeController(
 
             if (pboSettings.Any(s => s == null) && isAmdDevice)
             {
-                pboScaler = new StepperValue(1, 1, 10, 1, [], 1);
+                pboScaler = new StepperValue(0, 0, 7, 1, [], 0);
                 pboFreq = new StepperValue(0, 0, 200, 1, [], 0);
                 coreCurve = new StepperValue(0, 0, 20, 1, [], 0);
             }
@@ -1364,9 +1319,7 @@ public class GodModeController(
                 FanFullSpeed = preset.FanFullSpeed,
                 MinValueOffset = preset.MinValueOffset ?? defaultState.MinValueOffset,
                 MaxValueOffset = preset.MaxValueOffset ?? defaultState.MaxValueOffset,
-                PrecisionBoostOverdriveScaler = isAmdDevice
-                    ? CreateStepperValue(defaultState.PrecisionBoostOverdriveScaler, pboScaler ?? preset.PrecisionBoostOverdriveScaler)
-                    : preset.PrecisionBoostOverdriveScaler,
+                PrecisionBoostOverdriveScaler = (isAmdDevice && pboScaler != null) ? pboScaler : preset.PrecisionBoostOverdriveScaler,
                 PrecisionBoostOverdriveBoostFrequency = (isAmdDevice && pboFreq != null) ? pboFreq : preset.PrecisionBoostOverdriveBoostFrequency,
                 AllCoreCurveOptimizer = (isAmdDevice && coreCurve != null) ? coreCurve : preset.AllCoreCurveOptimizer,
                 EnableAllCoreCurveOptimizer = (isAmdDevice && preset.EnableAllCoreCurveOptimizer == null) ? false : preset.EnableAllCoreCurveOptimizer,
@@ -1447,13 +1400,15 @@ public class GodModeController(
 
     #region Event
 
-    protected async Task RaisePresetChanged(Guid presetId, SoftwareStatus? vantageStatus = null)
+    protected async Task RaisePresetChanged(Guid presetId)
     {
         var (_, preset) = await GetActivePresetAsync().ConfigureAwait(false);
-
-        var feature = IoCContainer.Resolve<PowerModeFeature>();
-        await feature.EnsureCorrectWindowsPowerSettingsAreSetAsync(preset, true, vantageStatus).ConfigureAwait(false);
-
+        try
+        {
+            var feature = IoCContainer.Resolve<PowerModeFeature>();
+            await feature.EnsureCorrectWindowsPowerSettingsAreSetAsync(preset).ConfigureAwait(false);
+        }
+        catch { /* feature may not be available in all contexts */ }
         PresetChanged?.Invoke(this, presetId);
     }
 
@@ -1463,27 +1418,20 @@ public class GodModeController(
 
     private async Task<GodModePlatformConfiguration> GetConfigAsync()
     {
-        if (_config is null)
+        if (_config != null)
         {
-            var mi = await GetMachineInformationAsync().ConfigureAwait(false);
-            _config = mi.Properties.GodModePlatform switch
-            {
-                GodModePlatform.LegacyLegion => GodModePlatformConfiguration.LegacyLegion,
-                GodModePlatform.Legion => GodModePlatformConfiguration.Legion,
-                GodModePlatform.NonGaming => GodModePlatformConfiguration.NonGaming,
-                _ => throw new InvalidOperationException("Unsupported GodMode platform"),
-            };
+            return _config;
         }
 
-        var config = _config;
-        var useNvApiCapabilities = !config.Capabilities.Any(IsNvApiCapability) || NVAPI.IsAvailable();
-
-        if (useNvApiCapabilities)
-            return config;
-
-        Log.Instance.Trace($"NVAPI is not available, removing NVAPI capabilities...");
-
-        return config with { Capabilities = config.Capabilities.Where(c => !IsNvApiCapability(c)).ToList() };
+        var mi = await GetMachineInformationAsync().ConfigureAwait(false);
+        _config = mi.Properties.GodModePlatform switch
+        {
+            GodModePlatform.LegacyLegion => GodModePlatformConfiguration.LegacyLegion,
+            GodModePlatform.Legion => GodModePlatformConfiguration.Legion,
+            GodModePlatform.NonGaming => GodModePlatformConfiguration.NonGaming,
+            _ => throw new InvalidOperationException("Unsupported GodMode platform"),
+        };
+        return _config;
     }
 
     private async Task<MachineInformation> GetMachineInformationAsync()

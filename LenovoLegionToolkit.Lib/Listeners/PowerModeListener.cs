@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Threading;
 using System.Threading.Tasks;
 using LenovoLegionToolkit.Lib.Controllers;
 using LenovoLegionToolkit.Lib.Controllers.GodMode;
@@ -24,9 +23,6 @@ public class PowerModeListener(
         public PowerModeState State { get; } = state;
     }
 
-    private readonly SemaphoreSlim _changeLock = new(1, 1);
-    private PowerModeState? _lastState;
-
     protected override PowerModeState GetValue(int value)
     {
         var result = (PowerModeState)(value - 1);
@@ -35,49 +31,22 @@ public class PowerModeListener(
 
     protected override ChangedEventArgs GetEventArgs(PowerModeState value) => new(value);
 
-    protected override bool RaiseChangedAutomatically => false;
-
-    protected override Task OnChangedAsync(PowerModeState value) =>
-        ProcessChangeAsync(value);
-
-    public Task NotifyAsync(PowerModeState value)
+    protected override async Task OnChangedAsync(PowerModeState value)
     {
-        return ProcessChangeAsync(value, force: true, showNotification: false);
+        Log.Instance.Trace($"PowerModeListener.OnChangedAsync (WMI event path): value={value}");
+        var sw = Stopwatch.StartNew();
+        await ChangeDependenciesAsync(value).ConfigureAwait(false);
+        Log.Instance.Trace($"ChangeDependenciesAsync completed [elapsed={sw.ElapsedMilliseconds}ms]");
+        PublishNotification(value);
     }
 
-    public Task ChangeAsync(PowerModeState value, Func<Task> change, bool applyGodModePreset = true) =>
-        ProcessChangeAsync(value, change, applyGodModePreset, force: true, showNotification: false);
-
-    private async Task ProcessChangeAsync(PowerModeState value, Func<Task>? change = null,
-        bool applyGodModePreset = true, bool force = false, bool showNotification = true)
+    public async Task NotifyAsync(PowerModeState value)
     {
-        await _changeLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (!force && _lastState == value)
-            {
-                return;
-            }
-
-            _lastState = null;
-            if (change is not null)
-            {
-                await change().ConfigureAwait(false);
-            }
-
-            if (showNotification)
-            {
-                PublishNotification(value);
-            }
-
-            await ChangeDependenciesAsync(value, applyGodModePreset).ConfigureAwait(false);
-            RaiseChanged(value);
-            _lastState = value;
-        }
-        finally
-        {
-            _changeLock.Release();
-        }
+        Log.Instance.Trace($"PowerModeListener.NotifyAsync (explicit path): value={value}");
+        var sw = Stopwatch.StartNew();
+        await ChangeDependenciesAsync(value).ConfigureAwait(false);
+        Log.Instance.Trace($"ChangeDependenciesAsync completed [elapsed={sw.ElapsedMilliseconds}ms]");
+        RaiseChanged(value);
     }
 
     protected override async Task<bool> CanStartAsync()
@@ -86,26 +55,19 @@ public class PowerModeListener(
         return Compatibility.IsLegion(mi.LegionSeries);
     }
 
-    private async Task ChangeDependenciesAsync(PowerModeState value, bool applyGodModePreset = true)
+    private async Task ChangeDependenciesAsync(PowerModeState value)
     {
         var sw = Stopwatch.StartNew();
 
         if (value is PowerModeState.GodMode)
         {
-            Log.Instance.Trace($"Delaying GodMode apply... [applyGodModePreset={applyGodModePreset}]");
+            Log.Instance.Trace($"Delaying GodMode apply...");
             await Task.Delay(TimeSpan.FromMilliseconds(100)).ConfigureAwait(false);
 
-            if (applyGodModePreset)
-            {
-                Log.Instance.Trace($"Calling GodModeController.ApplyStateAsync...");
-                var godSw = Stopwatch.StartNew();
-                await godModeController.ApplyStateAsync().ConfigureAwait(false);
-                Log.Instance.Trace($"ApplyStateAsync completed [elapsed={godSw.ElapsedMilliseconds}ms]");
-            }
-            else
-            {
-                Log.Instance.Trace($"Suppressed God Mode preset apply, caller takes over.");
-            }
+            Log.Instance.Trace($"Calling GodModeController.ApplyStateAsync...");
+            var godSw = Stopwatch.StartNew();
+            await godModeController.ApplyStateAsync().ConfigureAwait(false);
+            Log.Instance.Trace($"ApplyStateAsync completed [elapsed={godSw.ElapsedMilliseconds}ms]");
         }
         else
         {
@@ -118,8 +80,8 @@ public class PowerModeListener(
             Log.Instance.Trace($"RestoreDefaultsInOtherPowerModeAsync completed [elapsed={restSw.ElapsedMilliseconds}ms]");
         }
 
-        await windowsPowerModeController.SetPowerModeAsync(value, skipThrottle: true).ConfigureAwait(false);
-        await windowsPowerPlanController.SetPowerPlanAsync(value, skipThrottle: true).ConfigureAwait(false);
+        await windowsPowerModeController.SetPowerModeAsync(value).ConfigureAwait(false);
+        await windowsPowerPlanController.SetPowerPlanAsync(value).ConfigureAwait(false);
 
         var gpuOverclockController = IoCContainer.Resolve<GPUOverclockController>();
         Log.Instance.Trace($"Checking GPUOverclock IsSupportedAsync...");

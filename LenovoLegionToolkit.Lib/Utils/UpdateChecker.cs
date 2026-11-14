@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using LenovoLegionToolkit.Lib.Extensions;
@@ -22,6 +23,8 @@ namespace LenovoLegionToolkit.Lib.Utils;
 
 public class UpdateChecker
 {
+    public static bool UsesArm64Releases => RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+
     private readonly HttpClientFactory _httpClientFactory;
     private readonly UpdateSettings _updateSettings = IoCContainer.Resolve<UpdateSettings>();
     private readonly AsyncLock _updateSemaphore = new();
@@ -78,7 +81,7 @@ public class UpdateChecker
             var timeSpanSinceLastUpdate = DateTime.UtcNow - _lastUpdate;
             var shouldCheck = timeSpanSinceLastUpdate > _minimumTimeSpanForRefresh;
 
-            if (_updateSettings.Store.UpdateMethod == UpdateMethod.GitHub)
+            if (UsesArm64Releases || _updateSettings.Store.UpdateMethod == UpdateMethod.GitHub)
             {
                 try
                 {
@@ -93,7 +96,8 @@ public class UpdateChecker
                     var productInformation = new ProductHeaderValue("LenovoLegionToolkit-UpdateChecker");
                     var connection = new Connection(productInformation, adapter);
                     var githubClient = new GitHubClient(connection);
-                    var releases = await githubClient.Repository.Release.GetAll("LenovoLegionToolkit-Team", "LenovoLegionToolkit", new ApiOptions { PageSize = 5 }).ConfigureAwait(false);
+                    var owner = UsesArm64Releases ? "emmarrem" : "LenovoLegionToolkit-Team";
+                    var releases = await githubClient.Repository.Release.GetAll(owner, "LenovoLegionToolkit", new ApiOptions { PageSize = 5 }).ConfigureAwait(false);
 
                     var thisReleaseVersion = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0, 0);
                     var thisBuildDate = Assembly.GetEntryAssembly()?.GetBuildDateTime() ?? new DateTime(2000, 1, 1);
@@ -107,7 +111,9 @@ public class UpdateChecker
 
                     var updates = releases
                         .Where(r => !r.Draft)
-                        .Where(r => IsMatchingChannel(r, updateChannel))
+                        .Where(r => UsesArm64Releases
+                            ? !r.Prerelease && r.Assets.Any(a => a.Name.EndsWith("-win-arm64.zip", StringComparison.OrdinalIgnoreCase))
+                            : IsMatchingChannel(r, updateChannel))
                         .Where(r => (r.PublishedAt ?? r.CreatedAt).UtcDateTime >= thisBuildDate)
                         .Select(r => new { Release = r, Version = TryParseReleaseVersion(r.TagName) })
                         .Where(r => r.Version is not null && r.Version > thisReleaseVersion)

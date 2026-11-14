@@ -25,7 +25,8 @@
 		<PackageReference Include="Octokit" Version="14.0.0" />
 		<PackageReference Include="TaskScheduler" Version="2.12.2" />
 		<PackageReference Include="LLT.WindowsDisplayAPI" Version="*-*" />
-		<PackageReference Include="LLT.LibreHardwareMonitorLib" Version="*-*" />
+		<PackageReference Include="LLT.LibreHardwareMonitorLib" Version="*-*" Condition="'$(RuntimeIdentifier)' != 'win-arm64'" />
+		<PackageReference Include="LLT.LibreHardwareMonitorLib" Version="[1.0.7-arm64.27]" Condition="'$(RuntimeIdentifier)' == 'win-arm64'" />
 		<PackageReference Include="LLT.NvAPIWrapper.Net" Version="*-*" />
 		<PackageReference Include="LLT.PresentMonFps" Version="*-*" />
 		<PackageReference Include="LLT.ZenStates-Core" Version="*-*" />

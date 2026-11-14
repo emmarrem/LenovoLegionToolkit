@@ -123,21 +123,12 @@ public readonly struct DashboardGroup(DashboardGroupType type, string? customNam
                 DashboardItem.WhiteKeyboardBacklight,
                 DashboardItem.PanelLogoBacklight,
                 DashboardItem.PortsBacklight,
-                DashboardItem.PowerButtonLed,
                 DashboardItem.TouchpadLock,
                 DashboardItem.FnLock,
                 DashboardItem.WinKeyLock)
         };
 
-        if (Compatibility.HasLenovoPowerManagementDevice() || AppFlags.Instance.Debug)
-        {
-            var chargeThresholdGroup = groups.First(g => g.Type == DashboardGroupType.Power);
-            var chargeThresholdItems = chargeThresholdGroup.Items.ToList();
-            chargeThresholdItems.Insert(3, DashboardItem.ChargeThreshold);
-            groups[0] = new(DashboardGroupType.Power, null, chargeThresholdItems.ToArray());
-        }
-
-        if (!mi.Properties.SupportsITSMode && !AppFlags.Instance.Debug)
+        if (!mi.Properties.SupportsITSMode)
         {
             return groups.ToArray();
         }

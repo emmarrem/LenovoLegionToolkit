@@ -208,9 +208,10 @@
 
                         <custom:CardControl Margin="0,0,0,8" Icon="Timer24">
                             <custom:CardControl.Header>
-                                <controls:CardHeaderControl
-                                    Title="{x:Static resources:Resource.DiscreteGPUControl_PollingIntervalTitle}"
-                                    Subtitle="{x:Static resources:Resource.DiscreteGPUControl_PollingIntervalDescription}" />
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{x:Static resources:Resource.DiscreteGPUControl_PollingIntervalTitle}" FontWeight="Medium" />
+                                    <TextBlock Text="{x:Static resources:Resource.DiscreteGPUControl_PollingIntervalDescription}" FontSize="11" TextWrapping="WrapWithOverflow" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
                             </custom:CardControl.Header>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <Slider 
@@ -226,9 +227,10 @@
 
                         <custom:CardControl Margin="0,0,0,8" Icon="Play24">
                             <custom:CardControl.Header>
-                                <controls:CardHeaderControl
-                                    Title="{x:Static resources:Resource.DiscreteGPUControl_StartupDelayTitle}"
-                                    Subtitle="{x:Static resources:Resource.DiscreteGPUControl_StartupDelayDescription}" />
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{x:Static resources:Resource.DiscreteGPUControl_StartupDelayTitle}" FontWeight="Medium" />
+                                    <TextBlock Text="{x:Static resources:Resource.DiscreteGPUControl_StartupDelayDescription}" FontSize="11" TextWrapping="WrapWithOverflow" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
                             </custom:CardControl.Header>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <Slider 
@@ -245,9 +247,10 @@
 
                         <custom:CardControl Margin="0,0,0,8" Icon="Dismiss24">
                             <custom:CardControl.Header>
-                                <controls:CardHeaderControl
-                                    Title="{x:Static resources:Resource.DiscreteGPUControl_KillProcessDelayTitle}"
-                                    Subtitle="{x:Static resources:Resource.DiscreteGPUControl_KillProcessDelayDescription}" />
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{x:Static resources:Resource.DiscreteGPUControl_KillProcessDelayTitle}" FontWeight="Medium" />
+                                    <TextBlock Text="{x:Static resources:Resource.DiscreteGPUControl_KillProcessDelayDescription}" FontSize="11" TextWrapping="WrapWithOverflow" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
                             </custom:CardControl.Header>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <Slider 

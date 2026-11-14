@@ -47,9 +47,8 @@ public static class BootLogo
             _ = GetChecksum();
             return true;
         }
-        catch (Exception ex)
+        catch
         {
-            Log.Instance.Trace($"Failed to check for Boot Logo support.", ex);
             return false;
         }
     }

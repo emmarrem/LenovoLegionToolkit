@@ -1,6 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using LenovoLegionToolkit.Lib.Utils;
 
 namespace LenovoLegionToolkit.Lib.System.Management;
 
@@ -12,40 +11,25 @@ public static partial class WMI
         {
             try
             {
-                var rows = await WMI.ReadAsync("root\\WMI", $"SELECT Lighting_Type FROM LENOVO_LIGHTING_DATA", properties =>
+                var rows = await WMI.ReadAsync("root\\WMI", $"SELECT Lighting_Id, Lighting_Type FROM LENOVO_LIGHTING_DATA", properties =>
                 {
+                    var lightingId = Convert.ToInt32(properties["Lighting_Id"].Value);
                     var lightingType = Convert.ToInt32(properties["Lighting_Type"].Value);
-                    return lightingType;
+                    return (lightingId, lightingType);
                 }).ConfigureAwait(false);
 
-                var hasRows = false;
-
-                foreach (var lightingType in rows)
+                foreach (var (lightingId, lightingType) in rows)
                 {
-                    hasRows = true;
-
-                    var keyboardType = (lightingType >> 1) & 7;
-                    if (keyboardType != 0)
+                    if ((lightingId & 7) != 0)
                     {
-                        return keyboardType;
+                        return (lightingType >> 1) & 7;
                     }
                 }
 
-                if (hasRows)
-                {
-                    Log.Instance.Trace($"No keyboard type reported in lighting data. [lightingTypes={string.Join(", ", rows)}]");
-
-                    return 0;
-                }
-
-                Log.Instance.Trace($"No lighting data found. [query=LENOVO_LIGHTING_DATA]");
-
                 return null;
             }
-            catch (Exception ex)
+            catch
             {
-                Log.Instance.Trace($"Failed to get keyboard type. [query=LENOVO_LIGHTING_DATA]", ex);
-
                 return null;
             }
         }

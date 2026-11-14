@@ -142,18 +142,6 @@ public readonly struct Brightness(byte value)
     public byte Value { get; } = value;
 }
 
-public readonly struct ChargeThreshold(bool enabled, int start, int stop)
-{
-    public bool Enabled { get; } = enabled;
-    public int Start { get; } = start;
-    public int Stop { get; } = stop;
-
-    public override string ToString()
-    {
-        return $"{nameof(Enabled)}: {Enabled}, {nameof(Start)}: {Start}, {nameof(Stop)}: {Stop}";
-    }
-}
-
 [StructLayout(LayoutKind.Sequential, Size = 16)]
 internal struct CIntelligentCooling
 {
@@ -431,11 +419,6 @@ public readonly struct GodModeDefaults
                $" {nameof(FanFullSpeed)}: {FanFullSpeed}";
     }
 }
-
-public sealed record SoftwareStatuses(
-    SoftwareStatus Vantage,
-    SoftwareStatus LegionSpace,
-    SoftwareStatus LegionZone);
 
 public readonly struct GodModeState
 {
@@ -1274,6 +1257,7 @@ public readonly struct Update(Release release)
     public string Title { get; } = release.Name;
     public string Description { get; } = release.Body;
     public DateTimeOffset Date { get; } = release.PublishedAt ?? release.CreatedAt;
+    public string ReleaseUrl { get; } = release.HtmlUrl;
 
     public string? Url { get; } = release.Assets
         .Where(ra => ra.Name.StartsWith("LenovoLegionToolkitSetup", StringComparison.InvariantCultureIgnoreCase) &&

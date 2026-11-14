@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Win32;
@@ -63,10 +62,7 @@ public class SmartFnLockController(FnLockFeature feature, ApplicationSettings se
                             if (ct.IsCancellationRequested)
                                 return;
 
-                            var readSw = Stopwatch.StartNew();
                             var state = await feature.GetStateAsync().ConfigureAwait(false);
-                            readSw.Stop();
-
                             if (state == FnLockState.Off || ct.IsCancellationRequested)
                                 return;
 
@@ -81,13 +77,8 @@ public class SmartFnLockController(FnLockFeature feature, ApplicationSettings se
                             if (Log.Instance.IsTraceEnabled)
                                 Log.Instance.Trace($"Modifier held past threshold, disabling Fn Lock temporarily...");
 
-                            var writeSw = Stopwatch.StartNew();
                             await feature.SetStateAsync(FnLockState.Off, verify: false).ConfigureAwait(false);
-                            writeSw.Stop();
                             didWrite = true;
-
-                            if (Log.Instance.IsTraceEnabled)
-                                Log.Instance.Trace($"Fn Lock disabled [read={readSw.ElapsedMilliseconds} ms, write={writeSw.ElapsedMilliseconds} ms]");
                         }
                         finally
                         {
@@ -121,12 +112,7 @@ public class SmartFnLockController(FnLockFeature feature, ApplicationSettings se
                                 if (Log.Instance.IsTraceEnabled)
                                     Log.Instance.Trace($"Modifier released, re-enabling Fn Lock...");
 
-                                var writeSw = Stopwatch.StartNew();
                                 await feature.SetStateAsync(FnLockState.On, verify: false).ConfigureAwait(false);
-                                writeSw.Stop();
-
-                                if (Log.Instance.IsTraceEnabled)
-                                    Log.Instance.Trace($"Fn Lock re-enabled [write={writeSw.ElapsedMilliseconds} ms]");
                             }
                             finally
                             {

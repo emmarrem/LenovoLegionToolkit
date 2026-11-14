@@ -71,8 +71,6 @@ public abstract class AbstractSensorsController(GPUController gpuController) : I
     protected int? _gpuMaxFanSpeedCache;
     protected int? _pchMaxFanSpeedCache;
 
-    public virtual bool HasPchFan => false;
-
     public abstract Task<bool> IsSupportedAsync();
 
     public async Task PrepareAsync()
@@ -160,7 +158,7 @@ public abstract class AbstractSensorsController(GPUController gpuController) : I
         return result;
     }
 
-    public virtual async Task<FanSpeedTable> GetFanSpeedsAsync()
+    public async Task<FanSpeedTable> GetFanSpeedsAsync()
     {
         var cpuFanSpeed = await GetCpuCurrentFanSpeedAsync().ConfigureAwait(false);
         var gpuFanSpeed = await GetGpuCurrentFanSpeedAsync().ConfigureAwait(false);

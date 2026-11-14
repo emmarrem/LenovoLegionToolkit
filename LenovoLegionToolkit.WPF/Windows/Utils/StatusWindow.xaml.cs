@@ -51,7 +51,7 @@ public partial class StatusWindow
     private IDisposable? _sensorSubscription;
 
     private MachineInformation? _machineInfo;
-    private bool _hasPchFan;
+    private Type? _cachedControllerType;
     private bool _isSpecialModel;
 
     private bool IsSpecialModel => _isSpecialModel;
@@ -159,7 +159,8 @@ public partial class StatusWindow
         _cpuFanAndPowerDesc.Visibility = sensorVis;
         _cpuFanAndPowerLabel.Visibility = sensorVis;
 
-        _systemFanGrid.Visibility = useSensors && _hasPchFan && !IsSpecialModel ? Visibility.Visible : Visibility.Collapsed;
+        var isV5 = _cachedControllerType == typeof(SensorsControllerV5);
+        _systemFanGrid.Visibility = (useSensors && isV5 && !IsSpecialModel) ? Visibility.Visible : Visibility.Collapsed;
 
         if (gpuStatus.HasValue)
         {
@@ -211,9 +212,6 @@ public partial class StatusWindow
     {
         if (IsVisible)
         {
-            if (!_settings.Store.EnableHardwareSensors)
-                return;
-
             _sensorsGroupController.SensorsUpdated -= OnSensorsUpdated;
             _sensorsGroupController.SensorsUpdated += OnSensorsUpdated;
 
@@ -316,7 +314,7 @@ public partial class StatusWindow
                 if (!IsSpecialModel && await _sensorsController.IsSupportedAsync().WaitAsync(token))
                 {
                     var controller = await _sensorsController.GetControllerAsync().WaitAsync(token);
-                    _hasPchFan = controller?.HasPchFan == true;
+                    _cachedControllerType = controller?.GetType();
 
                     sensorsData = await _sensorsController.GetDataAsync().WaitAsync(token);
                 }
@@ -388,7 +386,7 @@ public partial class StatusWindow
             UpdateFanAndPower(_cpuFanAndPowerLabel, data.SensorsData?.CPU.FanSpeed ?? -1, data.CpuPower);
         }
 
-        if (_hasPchFan)
+        if (_cachedControllerType == typeof(SensorsControllerV4) || _cachedControllerType == typeof(SensorsControllerV5))
         {
             UpdateSystemFan(_systemFanLabel, data.SensorsData?.PCH.FanSpeed ?? -1);
         }
@@ -439,9 +437,7 @@ public partial class StatusWindow
         if (info.IsLowBattery) _batteryValueLabel.SetResourceReference(ForegroundProperty, "SystemFillColorCautionBrush"); else _batteryValueLabel.ClearValue(ForegroundProperty);
         _batteryValueLabel.Content = $"{info.BatteryPercentage}{Resource.Percent}";
         _batteryModeValueLabel.Content = batteryState.GetDisplayName();
-        _batteryDischargeValueLabel.Content = info.DischargeRate == int.MinValue
-            ? "-"
-            : $"{info.DischargeRate / 1000.0:+0.00;-0.00;0.00} {Resource.Watt}";
+        _batteryDischargeValueLabel.Content = $"{info.DischargeRate / 1000.0:+0.00;-0.00;0.00} {Resource.Watt}";
         _batteryMinDischargeValueLabel.Content = $"{info.MinDischargeRate / 1000.0:+0.00;-0.00;0.00} {Resource.Watt}";
         _batteryMaxDischargeValueLabel.Content = $"{info.MaxDischargeRate / 1000.0:+0.00;-0.00;0.00} {Resource.Watt}";
     }

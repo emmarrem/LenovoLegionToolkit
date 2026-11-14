@@ -49,7 +49,6 @@ public partial class WindowsPowerModeController(ApplicationSettings settings, IM
 
     public async Task SetPowerModeAsync(PowerModeState powerModeState, GodModeSettingsStore.Preset? preset = null, bool skipThrottle = false)
     {
-        using var immediate = skipThrottle ? _dispatcher.SuppressThrottle() : null;
         await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -105,9 +104,8 @@ public partial class WindowsPowerModeController(ApplicationSettings settings, IM
         }
     }
 
-    public async Task SetPowerModeAsync(ITSMode itsMode, bool skipThrottle = false, GodModeSettingsStore.Preset? preset = null)
+    public async Task SetPowerModeAsync(ITSMode itsMode, bool skipThrottle = false)
     {
-        using var immediate = skipThrottle ? _dispatcher.SuppressThrottle() : null;
         await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -126,10 +124,8 @@ public partial class WindowsPowerModeController(ApplicationSettings settings, IM
             Log.Instance.Trace($"Activating... [itsMode={itsMode}]");
 
             var defaultMode = settings.Store.ITSPowerModes.GetValueOrDefault(itsMode, WindowsPowerMode.Balanced);
-            var powerModeOnAc = preset?.Overrides.TryGetEnum<WindowsPowerMode>(PowerOverrideKey.PowerModeOnAc)
-                ?? settings.Store.ITSOverrides.GetPowerModeOnAc(itsMode);
-            var powerModeOnDc = preset?.Overrides.TryGetEnum<WindowsPowerMode>(PowerOverrideKey.PowerModeOnDc)
-                ?? settings.Store.ITSOverrides.GetPowerModeOnDc(itsMode);
+            var powerModeOnAc = settings.Store.ITSOverrides.GetPowerModeOnAc(itsMode);
+            var powerModeOnDc = settings.Store.ITSOverrides.GetPowerModeOnDc(itsMode);
 
             if (powerModeOnAc is null && powerModeOnDc is null)
             {
@@ -168,7 +164,6 @@ public partial class WindowsPowerModeController(ApplicationSettings settings, IM
 
     public async Task SetBalancedPowerModeAsync(bool skipThrottle = false)
     {
-        using var immediate = skipThrottle ? _dispatcher.SuppressThrottle() : null;
         await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -219,7 +214,30 @@ public partial class WindowsPowerModeController(ApplicationSettings settings, IM
             Log.Instance.Trace($"Failed to activate default power plan.", ex);
         }
 
-        return ApplyOverlayAsync(mainThreadDispatcher, activeGuid, acGuid, dcGuid);
+        mainThreadDispatcher.Dispatch(() =>
+        {
+            try
+            {
+                var result = PowerSetActiveOverlayScheme(activeGuid);
+                Log.Instance.Trace($"Overlay scheme set. [result={result}, activeGuid={activeGuid}]");
+            }
+            catch (Exception ex)
+            {
+                Log.Instance.Trace($"Failed to set active overlay scheme.", ex);
+            }
+        });
+
+        try
+        {
+            SetActiveOverlayRegistryForAc(acGuid);
+            SetActiveOverlayRegistryForDc(dcGuid);
+        }
+        catch (Exception ex)
+        {
+            Log.Instance.Trace($"Failed to update registry.", ex);
+        }
+
+        return Task.CompletedTask;
     }
 
     public static void SetActiveOverlayRegistryForAc(Guid guid)
@@ -291,30 +309,15 @@ public partial class WindowsPowerModeController(ApplicationSettings settings, IM
         return null;
     }
 
-    public static Task ApplyOverlayAsync(IMainThreadDispatcher mainThreadDispatcher, Guid activeGuid, Guid acGuid, Guid dcGuid)
+    public static void ApplyActiveOverlayScheme(Guid guid)
     {
         if (!IsOverlaySupported)
         {
-            return Task.CompletedTask;
+            return;
         }
 
-        mainThreadDispatcher.Dispatch(() =>
-        {
-            try
-            {
-                var result = PowerSetActiveOverlayScheme(activeGuid);
-                Log.Instance.Trace($"Overlay scheme set. [result={result}, guid={activeGuid}]");
-            }
-            catch (Exception ex)
-            {
-                Log.Instance.Trace($"Failed to apply overlay scheme.", ex);
-            }
-        });
-
-        SetActiveOverlayRegistryForAc(acGuid);
-        SetActiveOverlayRegistryForDc(dcGuid);
-
-        return Task.CompletedTask;
+        var result = PowerSetActiveOverlayScheme(guid);
+        Log.Instance.Trace($"Overlay scheme set. [result={result}, guid={guid}]");
     }
 
     private static unsafe void ActivateDefaultPowerPlanIfNeeded()

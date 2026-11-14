@@ -202,7 +202,7 @@ public partial class OsdSettingsWindow
 
         App.Current.OsdWindow?.Dispatcher.BeginInvoke(new Action(() =>
         {
-            (App.Current.OsdWindow as OsdWindowBase)?.SetWindowPosition();
+            (App.Current.OsdWindow as OsdWindowBase)?.RecalculatePosition();
         }), DispatcherPriority.Render);
     }
 
@@ -248,11 +248,14 @@ public partial class OsdSettingsWindow
                 if (styleTypeMapping.TryGetValue(selectedStyle, out Type? targetType) &&
                     App.Current.OsdWindow.GetType() != targetType)
                 {
+                    var oldOsdPos = new Point(App.Current.OsdWindow.Left, App.Current.OsdWindow.Top);
                     App.Current.OsdWindow.Close();
 
                     if (constructorMapping.TryGetValue(selectedStyle, out Func<Window>? constructor))
                     {
                         App.Current.OsdWindow = constructor();
+                        App.Current.OsdWindow.Left = oldOsdPos.X;
+                        App.Current.OsdWindow.Top = oldOsdPos.Y;
                         App.Current.OsdWindow.Show();
                     }
                 }
@@ -308,7 +311,7 @@ public partial class OsdSettingsWindow
 
         App.Current.OsdWindow?.Dispatcher.BeginInvoke(new Action(() =>
         {
-            (App.Current.OsdWindow as OsdWindowBase)?.SetWindowPosition();
+            (App.Current.OsdWindow as OsdWindowBase)?.RecalculatePosition();
         }), DispatcherPriority.Render);
     }
 
@@ -346,8 +349,10 @@ public partial class OsdSettingsWindow
 
     private void ResetPositionButton_Click(object sender, RoutedEventArgs e)
     {
-        _OsdSettings.Store.PanelPosition = null;
-        _OsdSettings.Store.BarPosition = null;
+        _OsdSettings.Store.PanelPositionX = null;
+        _OsdSettings.Store.PanelPositionY = null;
+        _OsdSettings.Store.BarPositionX = null;
+        _OsdSettings.Store.BarPositionY = null;
         _OsdSettings.SynchronizeStore();
         MessagingCenter.Publish(new OsdAppearanceChangedMessage());
     }

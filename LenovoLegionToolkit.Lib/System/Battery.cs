@@ -24,11 +24,6 @@ public static class Battery
             status = GetBatteryStatus(batteryTag);
         }
 
-        if (status.Value.Rate == int.MinValue)
-        {
-            return;
-        }
-
         if (status.Value.Rate == 0
             || (status.Value.Rate > 0 && (MinDischargeRate < 0 || MaxDischargeRate < 0))
             || (status.Value.Rate < 0 && (MinDischargeRate > 0 || MaxDischargeRate > 0)))
@@ -39,7 +34,7 @@ public static class Battery
 
         if (status.Value.Rate != 0)
         {
-            if (MaxDischargeRate == 0 || Math.Abs(status.Value.Rate) < Math.Abs(MinDischargeRate))
+            if (Math.Abs(status.Value.Rate) < Math.Abs(MinDischargeRate))
                 MinDischargeRate = status.Value.Rate;
             if (Math.Abs(status.Value.Rate) > Math.Abs(MaxDischargeRate))
                 MaxDischargeRate = status.Value.Rate;
@@ -80,7 +75,7 @@ public static class Battery
             (int)powerStatus.BatteryLifeTime,
             (int)powerStatus.BatteryFullLifeTime,
             status.Rate,
-            (status.Rate == 0 || status.Rate == int.MinValue) ? 0 : MinDischargeRate,
+            (status.Rate == 0) ? 0 : MinDischargeRate,
             MaxDischargeRate,
             (int)status.Capacity,
             (int)information.DesignedCapacity,

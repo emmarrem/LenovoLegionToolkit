@@ -100,19 +100,25 @@ public class SpectrumKeyboardBacklightController
     public async Task<IReadOnlyList<SpectrumKeyboardBacklightEffectType>> GetHiddenEffectTypesAsync()
     {
         var mi = await Compatibility.GetMachineInformationAsync().ConfigureAwait(false);
-        var keyboardType = await WMI.LenovoLightingData.GetKeyboardTypeAsync().ConfigureAwait(false);
-        return GetHiddenEffectTypes(mi, keyboardType);
+        return GetHiddenEffectTypes(mi);
     }
 
     public async Task<bool> Is1ZoneKeyboardAsync()
     {
         var mi = await Compatibility.GetMachineInformationAsync().ConfigureAwait(false);
-        var keyboardType = await WMI.LenovoLightingData.GetKeyboardTypeAsync().ConfigureAwait(false);
-        var result = Is1ZoneKeyboard(keyboardType, mi);
-
-        Log.Instance.Trace($"Checked 1-zone Spectrum keyboard. [machineType={mi.MachineType}, generation={mi.Generation}, keyboardType={keyboardType?.ToString() ?? "null"}, result={result}]");
-
-        return result;
+        var machineTypeFallback = Is1ZoneKeyboard(mi);
+        try
+        {
+            var keyboardType = await WMI.LenovoLightingData.GetKeyboardTypeAsync().ConfigureAwait(false);
+            var result = keyboardType is 4 || keyboardType is null && machineTypeFallback;
+            Log.Instance.Trace($"Checked 1-zone Spectrum keyboard. [machineType={mi.MachineType}, generation={mi.Generation}, keyboardType={keyboardType?.ToString() ?? "null"}, machineTypeFallback={machineTypeFallback}, result={result}]");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Log.Instance.Trace($"Failed to get Spectrum keyboard type; using machine type fallback. [machineType={mi.MachineType}, generation={mi.Generation}, result={machineTypeFallback}]", ex);
+            return machineTypeFallback;
+        }
     }
 
     public async Task<bool> IsFixedZoneKeyboardAsync()
@@ -140,9 +146,7 @@ public class SpectrumKeyboardBacklightController
             "83JF",
             "83JG",
             "83JH",
-            "83Q1",
-            "83Q6",
-            "83RW"
+            "83Q1"
         };
 
         return machineTypes.Contains(mi.MachineType);
@@ -158,8 +162,7 @@ public class SpectrumKeyboardBacklightController
             "83F6",
             "83F4",
             "83RU",
-            "83RV",
-            "83EY"
+            "83RV"
         };
 
         return machineTypes.Contains(mi.MachineType);
@@ -170,13 +173,27 @@ public class SpectrumKeyboardBacklightController
         !IsPerKeyKeyboard(mi) &&
         mi.Generation >= 10;
 
-    private static bool Is1ZoneKeyboard(int? keyboardType, MachineInformation mi) =>
-        keyboardType is 4 ||
-        keyboardType is null && Is1ZoneKeyboard(mi);
-
-    private static IReadOnlyList<SpectrumKeyboardBacklightEffectType> GetHiddenEffectTypes(MachineInformation mi, int? keyboardType)
+    private static IReadOnlyList<SpectrumKeyboardBacklightEffectType> GetHiddenEffectTypes(MachineInformation mi)
     {
-        if (Is1ZoneKeyboard(keyboardType, mi))
+        // The 24 Zone keyboard does not support the following effects.
+        // Therefore, they are hidden from the UI.
+        if (Is24ZoneKeyboard(mi))
+        {
+            return
+            [
+                SpectrumKeyboardBacklightEffectType.AuroraSync,
+                SpectrumKeyboardBacklightEffectType.AudioRipple,
+                SpectrumKeyboardBacklightEffectType.ColorChange,
+                SpectrumKeyboardBacklightEffectType.Rain,
+                SpectrumKeyboardBacklightEffectType.RainbowScrew,
+                SpectrumKeyboardBacklightEffectType.RainbowWave,
+                SpectrumKeyboardBacklightEffectType.Ripple,
+                SpectrumKeyboardBacklightEffectType.Type
+            ];
+        }
+
+        // The 1-zone Spectrum exposes only the same basic effect.
+        if (Is1ZoneKeyboard(mi))
         {
             return
             [
@@ -193,21 +210,7 @@ public class SpectrumKeyboardBacklightController
             ];
         }
 
-        if (Is24ZoneKeyboard(mi))
-        {
-            return
-            [
-                SpectrumKeyboardBacklightEffectType.AuroraSync,
-                SpectrumKeyboardBacklightEffectType.AudioRipple,
-                SpectrumKeyboardBacklightEffectType.ColorChange,
-                SpectrumKeyboardBacklightEffectType.Rain,
-                SpectrumKeyboardBacklightEffectType.RainbowScrew,
-                SpectrumKeyboardBacklightEffectType.RainbowWave,
-                SpectrumKeyboardBacklightEffectType.Ripple,
-                SpectrumKeyboardBacklightEffectType.Type
-            ];
-        }
-
+        // Aurora Sync has been moved into Dynamic Lighting start from Gen 10.
         if (mi.Generation >= 10)
         {
             return [SpectrumKeyboardBacklightEffectType.AuroraSync];

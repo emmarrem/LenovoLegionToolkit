@@ -129,7 +129,11 @@ public partial class DiscreteGPUManagementWindow : BaseWindow
                 var configuredApps = new List<string>();
                 try
                 {
-                    configuredApps.AddRange(Registry.GetValueNames(GPUController.GPU_PREFERENCES_HIVE, GPUController.GPU_PREFERENCES_KEY));
+                    using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\DirectX\UserGpuPreferences", false);
+                    if (key != null)
+                    {
+                        configuredApps.AddRange(key.GetValueNames());
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -267,11 +271,8 @@ public partial class DiscreteGPUManagementWindow : BaseWindow
 
         try
         {
-            if (!_gpuController.SetGpuPreference(vm.Path, preference))
-                SnackbarHelper.Show(Resource.Error, Resource.SettingsPage_HWA_GPUPreference_Error_Message, SnackbarType.Error);
-            else
-                SnackbarHelper.Show(Resource.DiscreteGPUControl_Title, Resource.SettingsPage_RestartRequired_Message, SnackbarType.Success);
-
+            _gpuController.SetGpuPreference(vm.Path, preference);
+            SnackbarHelper.Show(Resource.DiscreteGPUControl_Title, Resource.SettingsPage_RestartRequired_Message, SnackbarType.Success);
             _ = RefreshAppListAsync();
         }
         catch (Exception ex)

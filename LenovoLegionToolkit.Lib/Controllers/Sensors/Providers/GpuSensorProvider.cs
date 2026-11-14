@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using LenovoLegionToolkit.Lib.Extensions;
-using LenovoLegionToolkit.Lib.Utils;
 using LibreHardwareMonitor.Hardware;
 
 namespace LenovoLegionToolkit.Lib.Controllers.Sensors.Providers;
@@ -15,10 +14,7 @@ public partial class GpuSensorProvider : ISensorProvider
     private const float MB_PER_GB = 1024f;
     private const float MIN_ACTIVE_GPU_POWER = 10f;
 
-    private const string REGEX_AMD_GPU_INTEGRATED = @"AMD Radeon(?:\(TM\))?\s+\d+M";
-
-    private const string INTEGRATED_IDENTIFIER = "integrated";
-
+    private const string REGEX_AMD_GPU_INTEGRATED = @"AMD Radeon\(TM\)\s+\d+M";
     [GeneratedRegex(REGEX_AMD_GPU_INTEGRATED, RegexOptions.IgnoreCase, "zh-CN")]
     private static partial Regex IsAmdIGpu();
 
@@ -41,7 +37,7 @@ public partial class GpuSensorProvider : ISensorProvider
     private float _dgpuVramTotalRaw = -1;
     private float _igpuVramTotalRaw = -1;
 
-    private IHardware? _dgpuHardware, _igpuHardware;
+    private IHardware? _gpuHardware, _amdGpuHardware, _iGpuHardware;
 
     public HardwareUpdateScope Scope => HardwareUpdateScope.Gpu;
     public IReadOnlySet<SensorItem> ProvidedSensorItems { get; } = new HashSet<SensorItem>
@@ -57,38 +53,21 @@ public partial class GpuSensorProvider : ISensorProvider
     };
 
     public bool IsAvailable => HasDgpu || HasIgpu;
-    public bool HasDgpu => _dgpuHardware is not null;
-    public bool HasIgpu => _igpuHardware is not null;
-    public IHardware? DgpuHardware => _dgpuHardware;
-    public IHardware? IgpuHardware => _igpuHardware;
+    public bool HasDgpu => _gpuHardware != null || _amdGpuHardware != null;
+    public bool HasIgpu => _iGpuHardware != null;
+    public IHardware? DgpuHardware => _gpuHardware ?? _amdGpuHardware;
+    public IHardware? IgpuHardware => _iGpuHardware;
 
     public void Discover(IReadOnlyList<IHardware> hardware)
     {
         Reset();
+        _gpuHardware = hardware.FirstOrDefault(h => h.HardwareType == HardwareType.GpuNvidia);
+        _amdGpuHardware = hardware.FirstOrDefault(h => h.HardwareType == HardwareType.GpuAmd && !IsAmdIGpu().IsMatch(h.Name));
+        _iGpuHardware = hardware.FirstOrDefault(h => h.HardwareType == HardwareType.GpuIntel || (h.HardwareType == HardwareType.GpuAmd && IsAmdIGpu().IsMatch(h.Name)));
 
-        var gpus = hardware.Where(IsGpu).ToArray();
-
-        _dgpuHardware = gpus.FirstOrDefault(IsDiscrete);
-        _igpuHardware = gpus.FirstOrDefault(gpu => !IsDiscrete(gpu));
-
-        DiscoverGpu(_dgpuHardware, _dgpuSensors, dgpu: true);
-        DiscoverGpu(_igpuHardware, _igpuSensors, dgpu: false);
-
-        Log.Instance.Trace($"Discovered GPUs. [dgpu={_dgpuHardware?.Name ?? "<null>"}, igpu={_igpuHardware?.Name ?? "<null>"}]");
+        DiscoverGpu(DgpuHardware, _dgpuSensors, dgpu: true);
+        DiscoverGpu(_iGpuHardware, _igpuSensors, dgpu: false);
     }
-
-    private static bool IsGpu(IHardware hardware) =>
-        hardware.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel;
-
-    private static bool IsDiscrete(IHardware gpu) => gpu.HardwareType switch
-    {
-        HardwareType.GpuAmd => !IsAmdIntegrated(gpu.Name),
-        HardwareType.GpuIntel => !gpu.Identifier.ToString().Contains(INTEGRATED_IDENTIFIER, StringComparison.Ordinal),
-        _ => true,
-    };
-
-    private static bool IsAmdIntegrated(string name) =>
-        !string.IsNullOrWhiteSpace(name) && IsAmdIGpu().IsMatch(name);
 
     private static void DiscoverGpu(IHardware? gpu, Dictionary<SensorItem, ISensor> sensors, bool dgpu)
     {
@@ -167,6 +146,6 @@ public partial class GpuSensorProvider : ISensorProvider
     {
         _dgpuSensors.Clear(); _igpuSensors.Clear();
         _dgpuVramTotalRaw = -1; _igpuVramTotalRaw = -1;
-        _dgpuHardware = null; _igpuHardware = null;
+        _gpuHardware = null; _amdGpuHardware = null; _iGpuHardware = null;
     }
 }

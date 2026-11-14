@@ -7,7 +7,6 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -49,7 +48,6 @@ public partial class MainWindow
     private readonly FnKeysDisabler _fnKeysDisabler = IoCContainer.Resolve<FnKeysDisabler>();
     private readonly INavigationService _extensionNavigationService = IoCContainer.Resolve<INavigationService>();
     private readonly UpdateChecker _updateChecker = IoCContainer.Resolve<UpdateChecker>();
-    private readonly ThemeManager _themeManager = IoCContainer.Resolve<ThemeManager>();
 
     private const double CompactMinWidth = 550;
     private const double CompactMinHeight = 480;
@@ -58,9 +56,6 @@ public partial class MainWindow
 
     private TrayHelper? _trayHelper;
     private bool _windowSizeLocked;
-
-    private string? _cachedBackgroundImagePath;
-    private BitmapImage? _cachedBackgroundImage;
 
     public bool TrayTooltipEnabled { get; init; } = true;
     public bool DisableConflictingSoftwareWarning { get; set; }
@@ -78,10 +73,6 @@ public partial class MainWindow
         Loaded += MainWindow_Loaded;
         SourceInitialized += MainWindow_SourceInitialized;
         StateChanged += MainWindow_StateChanged;
-
-        _themeManager.ThemeApplied += ThemeManager_ThemeApplied;
-
-        UpdateThemeToggle();
 
         var version = Assembly.GetEntryAssembly()?.GetName().Version;
 #if DEBUG
@@ -170,12 +161,14 @@ public partial class MainWindow
             _title.FontSize = 11;
             if (_title.Parent is Grid titleGrid)
             {
-                titleGrid.Margin = new Thickness(8, 0, 150, 0);
+                titleGrid.Margin = new Thickness(8, 2, 150, 2);
             }
 
             _openLogIndicator.LayoutTransform = new ScaleTransform(0.8, 0.8);
+            _openLogIndicator.Margin = new Thickness(0, 0, 4, 0);
+
             _deviceInfoIndicator.LayoutTransform = new ScaleTransform(0.8, 0.8);
-            _themeToggle.LayoutTransform = new ScaleTransform(0.8, 0.8);
+            _deviceInfoIndicator.Margin = new Thickness(0, 0, 4, 0);
 
             foreach (var item in _navigationStore.Items.OfType<Wpf.Ui.Controls.NavigationItem>())
             {
@@ -216,9 +209,9 @@ public partial class MainWindow
 
         if (_applicationSettings.Store.MinimizeOnClose)
         {
-            Log.Instance.Trace($"Minimizing to tray...");
+            Log.Instance.Trace($"Minimizing...");
 
-            Hide();
+            WindowState = WindowState.Minimized;
             e.Cancel = true;
         }
         else
@@ -231,13 +224,9 @@ public partial class MainWindow
 
     private void MainWindow_Closed(object? sender, EventArgs args)
     {
-        _themeManager.ThemeApplied -= ThemeManager_ThemeApplied;
-
         _trayHelper?.Dispose();
         _trayHelper = null;
     }
-
-    private void ThemeManager_ThemeApplied(object? sender, EventArgs e) => UpdateThemeToggle();
 
     private void MainWindow_StateChanged(object? sender, EventArgs e)
     {
@@ -249,15 +238,14 @@ public partial class MainWindow
             return;
         }
 
-        UpdateEfficiencyMode();
-
         switch (WindowState)
         {
             case WindowState.Minimized:
-                if (_applicationSettings.Store.MinimizeToTray)
-                    Hide();
+                SetEfficiencyMode(true);
+                SendToTray();
                 break;
             case WindowState.Normal:
+                SetEfficiencyMode(false);
                 BringToForeground();
                 break;
         }
@@ -268,8 +256,6 @@ public partial class MainWindow
         var settings = IoCContainer.Resolve<ApplicationSettings>();
         ApplyWindowLock(settings.Store.LockWindowSize);
         Topmost = settings.Store.AlwaysOnTop;
-
-        UpdateEfficiencyMode();
 
         if (!IsVisible)
             return;
@@ -331,35 +317,6 @@ public partial class MainWindow
             return;
 
         OpenLog();
-    }
-
-    private void ThemeToggle_Click(object sender, MouseButtonEventArgs e) => CycleTheme();
-
-    private void CycleTheme()
-    {
-        var values = Enum.GetValues<Theme>();
-        var next = values[((int)_applicationSettings.Store.Theme + 1) % values.Length];
-
-        _applicationSettings.Store.Theme = next;
-        _applicationSettings.SynchronizeStore();
-
-        _themeManager.Apply();
-    }
-
-    private void UpdateThemeToggle()
-    {
-        var theme = _applicationSettings.Store.Theme;
-
-        _themeToggleIcon.Symbol = theme switch
-        {
-            Theme.Light => SymbolRegular.WeatherSunny24,
-            Theme.Dark => SymbolRegular.WeatherMoon24,
-            _ => SymbolRegular.CircleHalfFill24
-        };
-
-        var name = theme.GetDisplayName();
-        _themeToggle.ToolTip = name;
-        AutomationProperties.SetName(_themeToggle, name);
     }
 
     private void DeviceInfoIndicator_Click(object sender, MouseButtonEventArgs e) => ShowDeviceInfoWindow();
@@ -462,7 +419,7 @@ public partial class MainWindow
                             {
                                 _updateIndicator.Visibility = Visibility.Collapsed;
 
-                                if (manualCheck && IsVisibleToUser)
+                                if (manualCheck && WindowState != WindowState.Minimized)
                                 {
                                     switch (_updateChecker.Status)
                                     {
@@ -486,7 +443,7 @@ public partial class MainWindow
                                     string.Format(Resource.MainWindow_UpdateAvailableWithVersion, versionNumber);
                                 _updateIndicator.Visibility = Visibility.Visible;
 
-                                if (!IsVisibleToUser)
+                                if (WindowState == WindowState.Minimized)
                                     MessagingCenter.Publish(new NotificationMessage(NotificationType.UpdateAvailable, versionNumber));
                             }
                         }, TaskScheduler.FromCurrentSynchronizationContext());
@@ -579,30 +536,25 @@ public partial class MainWindow
         window.ShowDialog();
     }
 
+    public void SendToTray()
+    {
+        if (!_applicationSettings.Store.MinimizeToTray)
+            return;
+
+        SetEfficiencyMode(true);
+        Hide();
+        ShowInTaskbar = true;
+    }
+
     public void SetMainWindowBackgroundImage(string filePath)
     {
-        if (_cachedBackgroundImage is not null && _cachedBackgroundImagePath == filePath)
-        {
-            _backgroundImage.ImageSource = _cachedBackgroundImage;
-            return;
-        }
-
         BitmapImage bitmap = new BitmapImage();
         bitmap.BeginInit();
         bitmap.UriSource = new Uri(filePath);
         bitmap.CacheOption = BitmapCacheOption.OnLoad;
         bitmap.EndInit();
-        bitmap.Freeze();
-
-        _cachedBackgroundImagePath = filePath;
-        _cachedBackgroundImage = bitmap;
-
         _backgroundImage.ImageSource = bitmap;
     }
-
-    private bool IsVisibleToUser => IsVisible && WindowState != WindowState.Minimized;
-
-    private void UpdateEfficiencyMode() => SetEfficiencyMode(!IsVisibleToUser);
 
     private static unsafe void SetEfficiencyMode(bool enabled)
     {
