@@ -25,77 +25,18 @@
 ## 🚨 Project Status Notice
 
 > [!IMPORTANT]
-> - This project is actively developed by the **LenovoLegionToolkit-Team**
 > - Source repository [BartoszCichecki/LenovoLegionToolkit](https://github.com/BartoszCichecki/LenovoLegionToolkit) is archived
 > - Not officially affiliated with Lenovo
-
-#### Other language versions of this README file:
-* [简体中文版简介](README_zh-hans.md)
-* [日本語版のREADME](README_ja-JP.md)
-* [Русская версия README](README_ru-RU.md)
-
----
 
 Lenovo Legion Toolkit (LLT) is a Windows desktop utility created for Lenovo gaming laptops that replaces Lenovo Vantage / Legion Zone / Legion Space.
 
 It runs no background services, uses less memory, uses virtually no CPU, and contains no telemetry. Just like Lenovo Vantage, this application is Windows only.
-
-_Join the Official Discord: https://discord.gg/TB3ER8ZVdt_ (for releases, support and discussions)<br>
-_Join the Legion Series Discord: https://discord.com/invite/legionseries_<br>
-_Join the LOQ Series Discord: https://discord.gg/3GKzQtwdNf_
-
-# Localization
-This fork has linked to crowdin [LenovoLegionToolkit](https://crowdin.com/project/lenovolegiontoolkit-unofficial)
-
-Contributions to the localization efforts are warmly welcomed and greatly appreciated!
-
-# Screenshots
-
-### Main Window
-<img src="assets/Main_DarkMode.png" width="49%" /> <img src="assets/Main_LightMode.png" width="49%" />
-
-### Pages
-<img src="assets/Battery.png" width="49%" /> <img src="assets/Actions.png" width="49%" />
-<img src="assets/Macro.png" width="49%" />
-
-### Keyboard & Lighting
-<img src="assets/Keyboard_WMI.png" width="49%" /> <img src="assets/Keyboard_DynamicLighting.png" width="49%" />
-
-### On-Screen Display
-<img src="assets/OSD_BarStyle.png" width="49%" />
-
-### Settings
-<img src="assets/Setting_AppBehavior.png" width="49%" /> <img src="assets/Settings_Appearance.png" width="49%" />
-<img src="assets/Settings_Power.png" width="49%" /> <img src="assets/Settings_Display.png" width="49%" />
-<img src="assets/Settings_SmartKeys.png" width="49%" /> <img src="assets/Settings_SoftwareControl.png" width="49%" />
-<img src="assets/Settings_Updates.png" width="49%" /> <img src="assets/Settings_Integrations.png" width="49%" />
-
----
-
-# Table of Contents
-  - [Localization](#localization)
-  - [Screenshots](#screenshots)
-  - [Disclaimer](#disclaimer)
-  - [Download](#download)
-  - [Compatibility](#compatibility)
-  - [Features](#features)
-  - [Donate](#donate)
-  - [Credits](#credits)
-  - [FAQ](#faq)
-  - [Arguments](#arguments)
-  - [How to collect logs?](#how-to-collect-logs)
-  - [Questions?](#questions)
-  - [Contribution](#contribution)
 
 ## Disclaimer
 
 **The tool comes with no warranty. Use at your own risk.**
 
 Please be patient and read through this readme carefully - it contains important information.
-
-## Download
-
-[![Download](https://img.shields.io/badge/Download-Latest%20Installer-success?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/releases/latest)
 
 > [!TIP]
 > If you are looking for a Vantage alternative for Linux, check [LenovoLegionLinux](https://github.com/johnfanv2/LenovoLegionLinux) project out.
@@ -125,40 +66,6 @@ If you installed LLT on a clean Windows install, make sure to have necessary dri
 
 > [!NOTE]
 > These drivers are not required on Gen 10 and later laptops.
-
-#### Problems with .NET?
-
-If for whatever reason LLT installer did not setup .NET properly:
-1. Go to https://dotnet.microsoft.com/en-us/download/dotnet/9.0
-2. Find section ".NET Desktop Runtime"
-3. Download x64 Windows installer
-4. Run the installer
-
-> [!NOTE]
-> If you installed LLT from Scoop, .NET 9 should have been installed automatically as a dependency. If anything fails, use `scoop update` to update all packages and try to reinstall LLT with `--force` argument.
-
-After following these steps, you can open Terminal and type: `dotnet --info`. In the output look for section `.NET runtimes installed`, in this section you should see something like:
-
-`Microsoft.NETCore.App 9.0.0 [C:\Program Files\dotnet\shared\Microsoft.NETCore.App]`
-
-and
-
-`Microsoft.WindowsDesktop.App 9.0.0 [C:\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App]`
-
-The exact version number can be different, but as long as it is `9.x.x` it should be fine. If after these steps LLT still shows an error on startup that .NET couldn't be found or similar, the problem is on your machine and not with LLT.
-
-#### Want to help with testing?
-
-Join the [Official Discord](https://discord.gg/TB3ER8ZVdt) for the latest updates across several channels:
-- `#stable-updates` - Notifications for official releases.
-- `#beta-builds` - Pre-release versions for broader testing.
-- `#dev-snapshots` - Experimental builds straight from the development branch.
-
-The server also supports **issue reporting**, **feature requests**, and **hardware-related** discussions.
-
-You can also find us in:
-- [Legion Series Discord](https://discord.com/invite/legionseries) (`#legion-toolkit` channel)
-- [LOQ Series Discord](https://discord.gg/3GKzQtwdNf) (`#legion-toolkit` channel)
 
 ## Compatibility
 
@@ -437,15 +344,6 @@ The Script Console is enabled by starting LLT with `--debug` (see [Arguments](#a
 > [!WARNING]
 > Intended for advanced debugging only. Scripts run in the application's own process, so a misbehaving script can destabilize it. The script validator blocks file system, network, registry, WMI, reflection and process APIs, and rejects `#r` directives.
 
-## Donate
-
-If you enjoy using the Lenovo Legion Toolkit, consider supporting the developers who make it possible:
-
-* **Dr. Skinner**: [GitHub Sponsors](https://github.com/sponsors/Metanome) · [Buy Me a Coffee](https://buymeacoffee.com/metanome)
-* **Kaguya**: [Ifdian](https://ifdian.net/a/XKaguya)
-
-You can also use the **Sponsor** button at the top of the repository page.
-
 ## Credits
 
 Lenovo Legion Toolkit was originally created by **Bartosz Cichecki** ([GitHub](https://github.com/BartoszCichecki)). Since the original repository was archived, the project is now maintained and developed by the **LenovoLegionToolkit-Team**, specifically by **Kaguya** and **Dr. Skinner**.
@@ -458,73 +356,6 @@ Special thanks to:
 * [Mario Bălănică](https://github.com/mariobalanica), for all contributions.
 * [Ace-Radom](https://github.com/Ace-Radom), for all contributions.
 * [fan](https://github.com/Undervoltologist), for ec reverse engineering.
-
-### Third-party libraries
-
-LLT makes use of several open-source libraries. Components hosted under the [LenovoLegionToolkit-Team](https://github.com/LenovoLegionToolkit-Team) organisation are forks maintained by this project.
-
-**Core UI & Framework**
-* **WPF-UI** ([lepoco/wpfui](https://github.com/lepoco/wpfui))
-* **Autofac** ([autofac/Autofac](https://github.com/autofac/Autofac))
-* **Humanizer** ([Humanizr/Humanizer](https://github.com/Humanizr/Humanizer))
-* **Markdig** ([xoofx/markdig](https://github.com/xoofx/markdig)) & **Markdig.Wpf** ([Kryptos-FR/markdig.wpf](https://github.com/Kryptos-FR/markdig.wpf))
-
-**Systems & Hardware**
-* **RAMSPDToolkit** ([Blacktempel/RAMSPDToolkit](https://github.com/Blacktempel/RAMSPDToolkit))
-* **LibreHardwareMonitor** ([LenovoLegionToolkit-Team/LibreHardwareMonitor](https://github.com/LenovoLegionToolkit-Team/LibreHardwareMonitor))
-* **PawnIO** ([namazso/PawnIO](https://github.com/namazso/PawnIO))
-* **CoordinateSharp** ([Tronald/CoordinateSharp](https://github.com/Tronald/CoordinateSharp))
-* **ZenStates-Core** ([LenovoLegionToolkit-Team/ZenStates-Core](https://github.com/LenovoLegionToolkit-Team/ZenStates-Core))
-* **PresentMonFps** ([LenovoLegionToolkit-Team/PresentMonFps](https://github.com/LenovoLegionToolkit-Team/PresentMonFps))
-* **NvAPIWrapper** ([LenovoLegionToolkit-Team/NvAPIWrapper](https://github.com/LenovoLegionToolkit-Team/NvAPIWrapper))
-* **WindowsDisplayAPI** ([LenovoLegionToolkit-Team/WindowsDisplayAPI](https://github.com/LenovoLegionToolkit-Team/WindowsDisplayAPI))
-
-**Utilities**
-* **Newtonsoft.Json** ([JamesNK/Newtonsoft.Json](https://github.com/JamesNK/Newtonsoft.Json))
-* **Octokit** ([octokit/octokit.net](https://github.com/octokit/octokit.net))
-* **TaskScheduler** ([dahall/TaskScheduler](https://github.com/dahall/TaskScheduler))
-* **ManagedNativeWifi** ([emoacht/ManagedNativeWifi](https://github.com/emoacht/ManagedNativeWifi))
-* **PubSub** ([upta/pubsub](https://github.com/upta/pubsub))
-* **NeoSmart.AsyncLock** ([neosmart/AsyncLock](https://github.com/neosmart/AsyncLock))
-* **System.CommandLine** ([dotnet/command-line-api](https://github.com/dotnet/command-line-api))
-* **NAudio.Wasapi** ([naudio/NAudio](https://github.com/naudio/NAudio))
-* **Ben.Demystifier** ([benaadams/Ben.Demystifier](https://github.com/benaadams/Ben.Demystifier))
-
-**Visuals & UI Helpers**
-* **PixiEditor.ColorPicker** ([PixiEditor/ColorPicker](https://github.com/PixiEditor/ColorPicker))
-* **WpfScreenHelper** ([micdenny/WpfScreenHelper](https://github.com/micdenny/WpfScreenHelper))
-* **XamlAnimatedGif** ([thomaslevesque/XamlAnimatedGif](https://github.com/thomaslevesque/XamlAnimatedGif))
-
-**Scripting & Editors**
-* **AvalonEdit** ([icsharpcode/AvalonEdit](https://github.com/icsharpcode/AvalonEdit))
-* **Roslyn scripting** ([dotnet/roslyn](https://github.com/dotnet/roslyn))
-
-For a full list of third-party components and license notices, see the [NOTICE](NOTICE) file.
-
-Translations provided by:
-* Bulgarian - [Ekscentricitet](https://github.com/Ekscentricitet)
-* Chinese (Simplified) - [凌卡Karl](https://github.com/KarlLee830), [Ace-Radom](https://github.com/Ace-Radom)
-* Chinese (Traditional) - [flandretw](https://github.com/flandretw)
-* Czech - J0sef
-* Dutch - Melm, [JarneStaalPXL](https://github.com/JarneStaalPXL)
-* French - EliotAku, [Georges de Massol](https://github.com/jojo2massol), Rigbone, ZeroDegree
-* German - Sko-Inductor, Running_Dead89
-* Greek - GreatApo
-* Italian - [Lampadina17](https://github.com/Lampadina17)
-* Karakalpak - KarLin, Gulnaz, Niyazbek Tolibaev, Shingis Joldasbaev
-* Latvian - RJSkudra
-* Romanian - [Mario Bălănică](https://github.com/mariobalanica)
-* Slovak - Mitschud, Newbie414
-* Spanish - M.A.G.
-* Polish - Mariusz Dziemianowicz
-* Portuguese - dvsilva
-* Portuguese (Brasil) - Vernon
-* Russian - [Edward Johan](https://github.com/younyokel)
-* Turkish - Undervolt
-* Ukrainian -  [Vladyslav Prydatko](https://github.com/va1dee), [Dmytro Zozulia](https://github.com/Nollasko)
-* Vietnamese - Not_Nhan, Kuri, Nagidrop
-
-Many thanks to everyone else, who monitors and corrects translations!
 
 ## FAQ
 
@@ -666,52 +497,7 @@ If you decide to use the arguments with `args.txt` file:
 
 Arguments not listed above are no longer needed or available.
 
-## How to collect logs?
-
-In all troubleshooting situations, logs provide important information. **Always** attach logs to your issues. 
-
-#### Method 1: Via app settings (Recommended)
-1. Open **Lenovo Legion Toolkit**.
-2. Go to **Settings**.
-3. Toggle **Enable logging**.
-4. Reproduce the issue.
-5. Critical and hardware error logs are automatically saved under `"%LOCALAPPDATA%\LenovoLegionToolkit\log"`.
-
-#### Method 2: Manual trace (Alternative for startup issues)
-1. Make sure that Lenovo Legion Toolkit is not running (also gone from tray area).
-2. Open `Run` (Win+R) and type there: `"%LOCALAPPDATA%\Programs\LenovoLegionToolkit\Lenovo Legion Toolkit.exe" --trace` and hit OK.
-3. LLT will start and in the title bar you should see: `[LOGGING ENABLED]`.
-4. Reproduce the issue and close the app.
-5. In `Run` (Win+R) type `"%LOCALAPPDATA%\LenovoLegionToolkit\log"`.
-
-## Questions?
-If you have a general question, please use [GitHub Discussions](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/discussions) or join our [**Official Discord**](https://discord.gg/TB3ER8ZVdt). 
-
-## Contribution
-
-We appreciate any feedback that you have, so please do not hesitate to report issues.
-Pull Requests are also welcome, but make sure to check out [CONTRIBUTING.md](CONTRIBUTING.md) first!
-
 #### Compatibility
 
 > [!IMPORTANT]
-> If your laptop is not a Legion, Legion Go, IdeaPad Gaming, LOQ, Lenovo Slim, or ThinkBook, this software is not for you. Do not open compatibility requests for other device types.
-
-It would be great to expand the list of compatible devices, but to do it your help is needed!
-
-If you are willing to check if this app works correctly on your device that is currently unsupported, click _Continue_ on the popup you saw on startup. Lenovo Legion Toolkit will start logging automatically so you can submit the logs if anything goes wrong.
-
-*Remember that some functions may not function properly.*
-
-We would appreciate it, if you create an issue here on GitHub with the results of your testing.
-
-Make sure to include the following information in your issue:
-
-1. Full model name (e.g. Legion 5 Pro 16ACH6H)
-2. List of features that are working as expected.
-3. List of features that seem to not work.
-4. List of features that crash the app.
-
-The more info you add, the better the app will get over time. If anything seems off, write down precisely what was wrong and attach logs (`%LOCALAPPDATA%\LenovoLegionToolkit\log`). 
-
-Thanks in advance!
+> If your laptop is not a Legion, Legion Go, IdeaPad Gaming, LOQ, Lenovo Slim, or ThinkBook, this software is not for you.
