@@ -114,3 +114,7 @@ try {
 finally {
     Pop-Location
 }
+
+# The last test deliberately runs Git into a conflict. Report the test result
+# instead of leaving that expected native exit code for the Actions wrapper.
+exit 0
