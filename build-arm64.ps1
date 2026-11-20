@@ -34,7 +34,8 @@ $monitorProject = Join-Path $HardwareMonitorSource 'LibreHardwareMonitorLib\Libr
     -p:TargetFrameworks=net9.0 -p:RuntimeIdentifiers=win-arm64 -p:LangVersion=preview `
     "-p:Version=$monitorPackageVersion" "-p:PackageOutputPath=$localFeed" -v:q
 
-& $Dotnet restore $project -p:RuntimeIdentifier=win-arm64 -p:SelfContained=true --configfile $config -v:q
+& $Dotnet restore $project -p:RuntimeIdentifier=win-arm64 -p:SelfContained=true `
+    --configfile $config --force-evaluate --no-http-cache -v:q
 $publish = Join-Path $OutputDirectory "LenovoLegionToolkit-$Version-win-arm64"
 if (Test-Path -LiteralPath $publish) {
     throw "Choose an empty output directory. The publish folder already exists at $publish."
