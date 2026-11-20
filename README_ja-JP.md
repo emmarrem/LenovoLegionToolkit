@@ -32,6 +32,8 @@
 #### 他の言語バージョンのこのREADMEファイル：
 * [英語版のREADME](README.md)
 * [簡体字中国語版のREADME](README_zh-hans.md)
+* [Русская версия README](README_ru-RU.md)
+* [Türkçe README](README_tr-TR.md)
 
 ---
 
@@ -127,7 +129,7 @@ Lenovo Legion Toolkit は自動アップデートと手動アップデートの�
   * **チャンネル**: **Stable (安定版)**、**Beta (ベータ版)**、**Dev (開発版)** から選択可能。
   * **頻度**: 毎日、毎週、1時間ごとなどの自動チェック間隔を設定可能。
 * **シームレスな上書き更新**: 以前のバージョンをアンインストールする必要はありません。上書きインストールしても、すべての設定、カスタムモード、アクション、マクロが保持されます。
-* **整合性とセキュリティ**: すべての自動更新はインストール前に Authenticode デジタル署名によって検証されます。
+* **整合性とセキュリティ**: すべての自動更新は、インストール前にプロジェクトの信頼された証明書による Authenticode 署名で検証されます。
 
 #### 次のステップ
 
@@ -151,7 +153,7 @@ LLTはバックグラウンドで実行されているときに最適に動作�
 4. インストーラーを実行します
 
 > [!NOTE]
-> ScoopからLLTをインストールした場合、.NET 9は依存関係として自動的にインストールされるはずです。何かが失敗した場合、`scoop update`を使用してすべてのパッケージを更新し、`--force`引数を使用してLLTを再インストールしてみてください。
+> ScoopからLLTをインストールした場合、.NET 9は依存関係として自動的にインストールされるはずです。何かが失敗した場合、`scoop update` に続けて `scoop update *` を実行してすべてのパッケージを更新し、`--force` 引数を使用して LLT を再インストールしてみてください。
 
 これらの手順を実行した後、ターミナルを開いて`dotnet --info`と入力できます。出力で`.NET runtimes installed`セクションを探し、このセクションに次のようなものが表示されるはずです：
 
@@ -292,7 +294,7 @@ dGPUがアクティブで、ハイブリッドモードが有効で、dGPUに接
 
 従来のアプローチは、複数の電源プランを使用することです。これらのプランは、一部のデバイスに工場出荷時にインストールされています。これらを使用するか、独自のプランを構成する場合、Windows設定アプリの設定をデフォルトの「バランス」に設定しておきます。LLT設定で、レギオン電源モードを変更するたびに電源プランを自動的に切り替えるように構成できます。
 
-電源モードやプランの同期に問題がある場合、特に2つのアプローチを切り替える場合、`powercfg -restoredefaultschemes; shutdown /r /t `コマンドを使用してWindows電源設定をデフォルトにリセットできます。このコマンドは、すべての電源プランをデフォルトにリセットし、デバイスを再起動します。デフォルトの「バランス（推奨）」以外のすべてのプランが削除されるため、再度使用する予定がある場合は、コピーを作成してください。
+電源モードやプランの同期に問題がある場合、特に2つのアプローチを切り替える場合、`powercfg -restoredefaultschemes; shutdown /r /t 0`コマンドを使用してWindows電源設定をデフォルトにリセットできます。このコマンドは、すべての電源プランをデフォルトにリセットし、デバイスを再起動します。デフォルトの「バランス（推奨）」以外のすべてのプランが削除されるため、再度使用する予定がある場合は、コピーを作成してください。
 
 ### ブートロゴ
 
@@ -419,9 +421,21 @@ CLIは管理者として実行する必要はありません。
 
 </details>
 
+### C# スクリプトコンソール
+
+`--debug` 引数を付けて LLT を起動すると（[引数](#引数)を参照）Script Console が有効になり、**設定 → アプリの動作** から利用できます。アプリのプロセス内で C# スニペットを実行し、`LenovoLegionToolkit.Lib`、そのコントローラー、アプリケーションの状態にアクセスできます。出力、戻り値、実行時間、コンパイル/実行時エラーがウィンドウに表示されます。
+
+> [!WARNING]
+> 上級者向けのデバッグ専用です。スクリプトはアプリ自身のプロセス内で実行されるため、問題のあるスクリプトはアプリを不安定にする可能性があります。スクリプト検証により、ファイルシステム、ネットワーク、レジストリ、WMI、リフレクション、プロセス関連の API はブロックされ、`#r` ディレクティブは拒否されます。
+
 ## 寄付
 
-Lenovo Legion Toolkitを楽しんで使用している場合は、リポジトリページの上部にある GitHub Sponsors ボタンを使用してプロジェクトを支援することを検討してください。
+Lenovo Legion Toolkitを楽しんで使用している場合は、開発者の支援をご検討ください：
+
+* **Dr. Skinner**: [GitHub Sponsors](https://github.com/sponsors/Metanome) · [Buy Me a Coffee](https://buymeacoffee.com/metanome)
+* **Kaguya**: [Ifdian](https://ifdian.net/a/XKaguya)
+
+リポジトリページの上部にある **Sponsor** ボタンからも支援できます。
 
 ## クレジット
 
@@ -575,20 +589,24 @@ Lenovo の保証 API や地域ごとの制限により、保証情報を取得�
 
 LLT は以下のコマンドライン引数をサポートしています。
 
-* `--minimized` - LLT を最小化して起動します
-* `--skip-welcome` - 初回起動ウィザードをスキップします
 * `--trace` - 詳細ログを有効にします
-* `--disable-actions` - アクションを無効にします
-* `--disable-tooltips` - ツールチップを無効にします
-* `--force-disable-vantage` - Lenovo Vantage 関連の検出と統合を無効にします
-* `--force-disable-lenovohotkeys` - Lenovo Hotkeys 関連機能を無効にします
-* `--force-disable-lenovolighting` - Lenovo Lighting 関連機能を無効にします
-* `--experimental-gpu-working-mode` - Legion Zone と同じ実験的な GPU Working Mode 切り替えを使用します
+* `--debug` - デバッグモードと Script Console を有効にします _（この引数を使用した場合、サポートは提供されません）_
+* `--minimized` - LLT を最小化して起動します
+* `--skip-compat-check` - 起動時の互換性チェックを無効にします _（この引数を使用した場合、サポートは提供されません）_
+* `--disable-tray-tooltip` - トレイアイコンのツールチップを無効にします
+* `--allow-all-power-modes-on-battery` - AC アダプターなしですべての電源モードを使用できるようにします _（この引数を使用した場合、サポートは提供されません）_
+* `--force-disable-rgbkb` - 4ゾーン RGB キーボードのすべてのライティング機能を無効にします
+* `--force-disable-spectrumkb` - Spectrum パーキー RGB キーボードのすべてのライティング機能を無効にします
+* `--force-disable-lenovolighting` - パネルロゴやポートライトなどの Lenovo ライティング機能を無効にします
+* `--enable-lamp-array` - 対応キーボードで Lamp Array（Windows ダイナミック ライティング）を有効にします
+* `--experimental-gpu-working-mode` - Legion Zone と同じ実験的な GPU Working Mode 切り替えを使用します _（この引数を使用した場合、サポートは提供されません）_
+* `--experimental-its-mode` - ThinkBook デバイスで実験的な ITS モードドライバーを使用します _（この引数を使用した場合、サポートは提供されません）_
 * `--proxy-url=example.com` - LLT が使用するプロキシサーバーを指定します
 * `--proxy-username=some_username` - 必要に応じてプロキシのユーザー名を指定します
 * `--proxy-password=some_password` - 必要に応じてプロキシのパスワードを指定します
 * `--proxy-allow-all-certs` - 必要に応じてプロキシ経由の HTTPS/SSL 証明書検証を緩和します
 * `--disable-update-checker` - LLT の更新確認を無効にします
+* `--disable-conflicting-software-warning` - 競合するソフトウェアが実行中の警告バナーを無効にします
 
 引数を `args.txt` に保存する場合：
 1. `%LOCALAPPDATA%\LenovoLegionToolkit` を開きます

@@ -142,6 +142,18 @@ public readonly struct Brightness(byte value)
     public byte Value { get; } = value;
 }
 
+public readonly struct ChargeThreshold(bool enabled, int start, int stop)
+{
+    public bool Enabled { get; } = enabled;
+    public int Start { get; } = start;
+    public int Stop { get; } = stop;
+
+    public override string ToString()
+    {
+        return $"{nameof(Enabled)}: {Enabled}, {nameof(Start)}: {Start}, {nameof(Stop)}: {Stop}";
+    }
+}
+
 [StructLayout(LayoutKind.Sequential, Size = 16)]
 internal struct CIntelligentCooling
 {
@@ -320,11 +332,15 @@ public readonly struct FanTableInfo(FanTableData[] data, FanTable table)
     }
 }
 
-public readonly struct FanSpeedTable(int cpuFanSpeed, int gpuFanSpeed, int pchFanSpeed)
+public readonly record struct FanData(int FanId, int DisplayNumber, int Speed, int MaxSpeed);
+
+public readonly struct FanSpeedTable(int cpuFanSpeed, int gpuFanSpeed, IReadOnlyList<FanData> systemFans)
 {
+    private readonly IReadOnlyList<FanData>? _systemFans = systemFans;
+
     public int CpuFanSpeed { get; } = cpuFanSpeed;
     public int GpuFanSpeed { get; } = gpuFanSpeed;
-    public int PchFanSpeed { get; } = pchFanSpeed;
+    public IReadOnlyList<FanData> SystemFans => _systemFans ?? [];
 }
 
 public readonly struct GPUOverclockInfo(int coreDeltaMhz, int memoryDeltaMhz, int voltageLockMv = 0, int voltageCapMv = 0)
@@ -419,6 +435,11 @@ public readonly struct GodModeDefaults
                $" {nameof(FanFullSpeed)}: {FanFullSpeed}";
     }
 }
+
+public sealed record SoftwareStatuses(
+    SoftwareStatus Vantage,
+    SoftwareStatus LegionSpace,
+    SoftwareStatus LegionZone);
 
 public readonly struct GodModeState
 {
@@ -526,18 +547,6 @@ public readonly struct HardwareId(string vendor, string device)
     }
 
     #endregion
-}
-
-public readonly struct HidDeviceConfig(
-    ushort vendorId,
-    ushort productIdMasked,
-    ushort productIdMask,
-    ushort descriptorLength)
-{
-    public ushort VendorId { get; } = vendorId;
-    public ushort ProductIdMasked { get; } = productIdMasked;
-    public ushort ProductIdMask { get; } = productIdMask;
-    public ushort DescriptorLength { get; } = descriptorLength;
 }
 
 public readonly struct KeyMap(int width, int height, ushort[,] keyCodes, ushort[] additionalKeyCodes)
@@ -994,19 +1003,19 @@ public readonly struct SensorData(
     }
 }
 
-public readonly struct SensorsData(SensorData cpu, SensorData gpu, SensorData pch)
+public readonly struct SensorsData(SensorData cpu, SensorData gpu, int motherboardTemperature, IReadOnlyList<FanData> systemFans)
 {
-    public static readonly SensorsData Empty = new(SensorData.Empty, SensorData.Empty, SensorData.Empty);
+    private readonly IReadOnlyList<FanData>? _systemFans = systemFans;
+
+    public static readonly SensorsData Empty = new(SensorData.Empty, SensorData.Empty, -1, []);
 
     public SensorData CPU { get; } = cpu;
     public SensorData GPU { get; } = gpu;
+    public int MotherboardTemperature { get; } = motherboardTemperature;
+    public IReadOnlyList<FanData> SystemFans => _systemFans ?? [];
 
-    public SensorData PCH { get; } = pch;
-
-    public override string ToString()
-    {
-        return $"{nameof(CPU)}: {CPU}, {nameof(GPU)}: {GPU}, {nameof(PCH)}: {PCH}";
-    }
+    public override string ToString() =>
+        $"{nameof(CPU)}: {CPU}, {nameof(GPU)}: {GPU}, {nameof(MotherboardTemperature)}: {MotherboardTemperature}, {nameof(SystemFans)}: [{string.Join(", ", SystemFans)}]";
 }
 
 public readonly struct ShutdownInfo
@@ -1378,6 +1387,7 @@ public struct UpdateFromServer(ProjectInfo projectInfo, string patchNote)
 public sealed record HardwareSensorSnapshot
 {
     private readonly float[] _values = new float[Enum.GetValues<SensorItem>().Length];
+    public string? GpuName { get; init; }
 
     public HardwareSensorSnapshot()
     {
@@ -1395,7 +1405,7 @@ public sealed record HardwareSensorSnapshot
 
     public HardwareSensorSnapshot WithValue(SensorItem item, float value)
     {
-        var copy = new HardwareSensorSnapshot();
+        var copy = new HardwareSensorSnapshot { GpuName = GpuName };
         Array.Copy(_values, copy._values, _values.Length);
         copy._values[(int)item] = value;
         return copy;
@@ -1403,7 +1413,7 @@ public sealed record HardwareSensorSnapshot
 
     public HardwareSensorSnapshot WithValues(IReadOnlyDictionary<SensorItem, float> values)
     {
-        var copy = new HardwareSensorSnapshot();
+        var copy = new HardwareSensorSnapshot { GpuName = GpuName };
         Array.Copy(_values, copy._values, _values.Length);
         foreach (var (item, val) in values)
             copy._values[(int)item] = val;

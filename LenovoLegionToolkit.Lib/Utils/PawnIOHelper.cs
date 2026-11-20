@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
+using System.ServiceProcess;
 using System.Threading.Tasks;
 using LenovoLegionToolkit.Lib;
 using LenovoLegionToolkit.Lib.Settings;
@@ -11,7 +11,9 @@ namespace LenovoLegionToolkit.Lib.Utils;
 
 public static class PawnIOHelper
 {
-    public static bool IsSupported => RuntimeInformation.OSArchitecture == Architecture.X64;
+    public static bool IsSupported =>
+        global::System.Runtime.InteropServices.RuntimeInformation.OSArchitecture ==
+        global::System.Runtime.InteropServices.Architecture.X64;
 
     private static readonly ApplicationSettings ApplicationSettings = IoCContainer.Resolve<ApplicationSettings>();
 
@@ -26,18 +28,26 @@ public static class PawnIOHelper
 
     private static readonly Version MinimumPawnIOVersion = new(2, 2, 0, 0);
 
+    private const int STATE_CACHE_MS = 10_000;
+    private static PawnIOState? _cachedState;
+    private static long _cachedStateTick;
+
     public static Version RequiredPawnIOVersion => MinimumPawnIOVersion;
 
     public static Func<PawnIOState, Task<bool>>? RequestShowDialogAsync;
 
     public static void OpenPawnIODownloadPage()
     {
+        InvalidateStateCache();
         Process.Start("explorer.exe", $"\"https://pawnio.eu/\"");
     }
 
     public static async Task TryShowPawnIODialogAsync(PawnIOState state, bool disableHardwareSensors = true)
     {
-        if (!IsSupported || RequestShowDialogAsync == null)
+        if (!IsSupported)
+            return;
+
+        if (RequestShowDialogAsync == null)
         {
             return;
         }
@@ -53,7 +63,6 @@ public static class PawnIOHelper
         if (disableHardwareSensors)
         {
             ApplicationSettings.Store.EnableHardwareSensors = false;
-            ApplicationSettings.Store.UseNewSensorDashboard = false;
             ApplicationSettings.SynchronizeStore();
         }
     }
@@ -116,18 +125,32 @@ public static class PawnIOHelper
 
     public static PawnIOState GetPawnIOState()
     {
-        if (!IsSupported || !IsPawnIOInstalled())
+        if (!IsSupported)
+            return PawnIOState.NotInstalled;
+
+        var now = Environment.TickCount64;
+        if (_cachedState is { } cached && now - _cachedStateTick < STATE_CACHE_MS)
+        {
+            return cached;
+        }
+
+        var state = DetectPawnIOState();
+        _cachedState = state;
+        _cachedStateTick = now;
+        return state;
+    }
+
+    public static void InvalidateStateCache() => _cachedState = null;
+
+    private static PawnIOState DetectPawnIOState()
+    {
+        if (!IsPawnIOInstalled())
         {
             return PawnIOState.NotInstalled;
         }
 
         var version = GetInstalledVersion();
-        if (version is null)
-        {
-            return PawnIOState.Installed;
-        }
-
-        if (IsOlderThan(version, MinimumPawnIOVersion))
+        if (version is not null && IsOlderThan(version, MinimumPawnIOVersion))
         {
             return PawnIOState.UpdateRequired;
         }
@@ -139,24 +162,8 @@ public static class PawnIOHelper
     {
         try
         {
-            var startInfo = new ProcessStartInfo("sc.exe", "query PawnIO")
-            {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-
-            using var process = Process.Start(startInfo);
-            if (process is null)
-            {
-                return false;
-            }
-
-            var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-
-            return output.Contains("RUNNING", StringComparison.OrdinalIgnoreCase);
+            using var service = new ServiceController("PawnIO");
+            return service.Status == ServiceControllerStatus.Running;
         }
         catch
         {

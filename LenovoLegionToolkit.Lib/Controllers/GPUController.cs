@@ -11,7 +11,6 @@ using LenovoLegionToolkit.Lib.System;
 using LenovoLegionToolkit.Lib.System.Management;
 using LenovoLegionToolkit.Lib.Utils;
 using NeoSmart.AsyncLock;
-using NvAPIWrapper.GPU;
 using NvAPIWrapper.Native.Exceptions;
 using NvAPIWrapper.Native.General;
 using NvAPIWrapper.Native.GPU;
@@ -24,6 +23,7 @@ public class GPUController
 {
     private readonly AsyncLock _stateLock = new();
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private readonly SemaphoreSlim _pStateGate = new(1, 1);
 
     public int Interval { get; set; } = 5000;
 
@@ -41,19 +41,7 @@ public class GPUController
     public event EventHandler<GPUStatus>? Refreshed;
     public bool IsStarted => _refreshCancellationTokenSource is not null;
 
-    public bool IsSupported()
-    {
-        try
-        {
-            NVAPI.Initialize();
-            PhysicalGPU? gpu = NVAPI.GetGPU();
-            return gpu is not null;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    public bool IsSupported() => NVAPI.IsAvailable();
 
     public async Task<GPUState> GetLastKnownStateAsync()
     {
@@ -186,7 +174,7 @@ public class GPUController
             Log.Instance.Trace($"Initialized NVAPI");
 
             var settings = IoCContainer.Resolve<ApplicationSettings>();
-            if (settings.Store.LockedPStateId >= 0)
+            if (IsPStateSelectionActive(settings.Store.LockedPStateId))
             {
                 await ApplyPStateAsync(settings.Store.LockedPStateId).ConfigureAwait(false);
             }
@@ -273,6 +261,9 @@ public class GPUController
                 SetPoweredOffState();
             }
 
+            if (oldState != GPUState.PoweredOff)
+                Log.Instance.Trace($"dGPU is powered off. [reason=coprocPowerState, powerState={coprocInfo.PowerState}]");
+
             return;
         }
 
@@ -300,6 +291,9 @@ public class GPUController
             {
                 SetPoweredOffState();
             }
+
+            if (oldState != GPUState.PoweredOff)
+                Log.Instance.Trace($"dGPU is powered off. [reason=nvapiException, status={ex.Status}]");
 
             return;
         }
@@ -394,7 +388,7 @@ public class GPUController
             (newState is GPUState.Active or GPUState.Inactive or GPUState.MonitorConnected))
         {
             var lockedPState = IoCContainer.Resolve<ApplicationSettings>().Store.LockedPStateId;
-            if (lockedPState >= 0)
+            if (IsPStateSelectionActive(lockedPState))
             {
                 _ = ApplyPStateAsync(lockedPState);
             }
@@ -404,54 +398,77 @@ public class GPUController
     public IReadOnlyList<Process> ActiveProcesses => _processes;
     public IReadOnlyList<Process> AllActiveProcesses => _allProcesses;
 
+    public const string GPU_PREFERENCES_HIVE = "HKEY_CURRENT_USER";
+    public const string GPU_PREFERENCES_KEY = @"SOFTWARE\Microsoft\DirectX\UserGpuPreferences";
+
     public GpuPreference GetGpuPreference(string exePath)
     {
-        var prefString = Registry.GetValue("HKEY_CURRENT_USER", @"SOFTWARE\Microsoft\DirectX\UserGpuPreferences", exePath, string.Empty);
+        var prefString = ReadGpuPreferenceValue(exePath);
 
         var isOurApp = string.Equals(exePath, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase);
         var aumid = isOurApp ? GetAppUserModelId() : null;
 
         if (string.IsNullOrEmpty(prefString) && !string.IsNullOrEmpty(aumid))
-            prefString = Registry.GetValue("HKEY_CURRENT_USER", @"SOFTWARE\Microsoft\DirectX\UserGpuPreferences", aumid, string.Empty);
+            prefString = ReadGpuPreferenceValue(aumid);
 
-        if (prefString.Contains("GpuPreference=1")) return GpuPreference.Integrated;
-        if (prefString.Contains("GpuPreference=2")) return GpuPreference.Discrete;
-
-        return GpuPreference.Default;
+        return ParseGpuPreference(prefString);
     }
 
-    public void SetGpuPreference(string exePath, GpuPreference preference)
+    public bool SetGpuPreference(string exePath, GpuPreference preference)
     {
         try
         {
             var isOurApp = string.Equals(exePath, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase);
             var aumid = isOurApp ? GetAppUserModelId() : null;
 
-            if (preference == GpuPreference.Default)
-            {
-                using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\DirectX\UserGpuPreferences", true);
-                key?.DeleteValue(exePath, false);
+            var names = new List<string> { exePath };
+            if (!string.IsNullOrEmpty(aumid))
+                names.Add(aumid);
 
-                if (!string.IsNullOrEmpty(aumid))
-                {
-                    key?.DeleteValue(aumid, false);
-                }
-            }
-            else
-            {
-                var value = preference == GpuPreference.Integrated ? "GpuPreference=1;" : "GpuPreference=2;";
-                Registry.SetValue("HKEY_CURRENT_USER", @"SOFTWARE\Microsoft\DirectX\UserGpuPreferences", exePath, value, false, Microsoft.Win32.RegistryValueKind.String);
+            foreach (var name in names)
+                WriteGpuPreference(name, preference);
 
-                if (!string.IsNullOrEmpty(aumid))
-                {
-                    Registry.SetValue("HKEY_CURRENT_USER", @"SOFTWARE\Microsoft\DirectX\UserGpuPreferences", aumid, value, false, Microsoft.Win32.RegistryValueKind.String);
-                }
-            }
+            return names.TrueForAll(name => ParseGpuPreference(ReadGpuPreferenceValue(name)) == preference);
         }
         catch (Exception ex)
         {
             Log.Instance.Trace($"Failed to set GPU preference for {exePath}.", ex);
+            return false;
         }
+    }
+
+    private static string ReadGpuPreferenceValue(string name) => Registry.GetValue(GPU_PREFERENCES_HIVE, GPU_PREFERENCES_KEY, name, string.Empty);
+
+    private static GpuPreference ParseGpuPreference(string prefString)
+    {
+        foreach (var flag in prefString.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (flag == "GpuPreference=1")
+                return GpuPreference.Integrated;
+
+            if (flag == "GpuPreference=2")
+                return GpuPreference.Discrete;
+        }
+
+        return GpuPreference.Default;
+    }
+
+    private static void WriteGpuPreference(string name, GpuPreference preference)
+    {
+        if (preference == GpuPreference.Default)
+        {
+            Registry.DeleteValue(GPU_PREFERENCES_HIVE, GPU_PREFERENCES_KEY, name);
+            return;
+        }
+
+        var existing = Registry.GetValue(GPU_PREFERENCES_HIVE, GPU_PREFERENCES_KEY, name, string.Empty);
+        var flags = existing.Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Where(flag => !flag.StartsWith("GpuPreference=", StringComparison.Ordinal))
+            .ToList();
+
+        flags.Add(preference == GpuPreference.Integrated ? "GpuPreference=1" : "GpuPreference=2");
+
+        Registry.SetValue(GPU_PREFERENCES_HIVE, GPU_PREFERENCES_KEY, name, $"{string.Join(';', flags)};", false, Microsoft.Win32.RegistryValueKind.String);
     }
 
     private List<PerformanceStateId>? _cachedSupportedPerformanceStates;
@@ -482,7 +499,13 @@ public class GPUController
         }
     }
 
-    public async Task<bool> SetPStateAsync(int pStateId)
+    public const int AutoPStateId = -1;
+
+    public const int RatedTdpPStateId = -2;
+
+    public static bool IsPStateSelectionActive(int pStateId) => pStateId >= 0 || pStateId == RatedTdpPStateId;
+
+    public async Task<PStateApplyResult> SetPStateAsync(int pStateId)
     {
         var settings = IoCContainer.Resolve<ApplicationSettings>();
         settings.Store.LockedPStateId = pStateId;
@@ -491,28 +514,67 @@ public class GPUController
         return await ApplyPStateAsync(pStateId).ConfigureAwait(false);
     }
 
-    public Task<bool> ApplyPStateAsync(int pStateId)
+    public async Task<PStateApplyResult> SetPStatePinModeAsync(PStatePinMode pinMode)
     {
+        var settings = IoCContainer.Resolve<ApplicationSettings>();
+        settings.Store.PStatePinMode = pinMode;
+        settings.SynchronizeStore();
+
+        var pStateId = settings.Store.LockedPStateId;
+        if (pStateId < 0)
+            return PStateApplyResult.Skipped;
+
+        return await ApplyPStateAsync(pStateId).ConfigureAwait(false);
+    }
+
+    public async Task<PStateApplyResult> ApplyPStateAsync(int pStateId)
+    {
+        await _pStateGate.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (IoCContainer.Resolve<HybridModeFeature>().ShouldKeepDGPUAsleep())
+            {
+                Log.Instance.Trace($"dGPU eject is being ensured, skipping P-State apply.");
+                return PStateApplyResult.Skipped;
+            }
+
             var gpu = NVAPI.GetGPU();
             if (gpu is null)
-                return Task.FromResult(false);
+                return PStateApplyResult.Skipped;
+
+            if (pStateId == RatedTdpPStateId)
+            {
+                Log.Instance.Trace($"Setting GPU to rated TDP mode.");
+                return NVAPI.SetRatedTdp(gpu) ? PStateApplyResult.Applied : PStateApplyResult.Failed;
+            }
 
             if (pStateId < 0)
             {
                 Log.Instance.Trace($"Resetting GPU to dynamic P-State mode.");
-                return Task.FromResult(NVAPI.ResetDynamicPerformanceStates(gpu));
+                return NVAPI.ResetDynamicPerformanceStates(gpu) ? PStateApplyResult.Applied : PStateApplyResult.Failed;
             }
 
+            var pinMode = IoCContainer.Resolve<ApplicationSettings>().Store.PStatePinMode;
             var targetState = (PerformanceStateId)(uint)pStateId;
-            Log.Instance.Trace($"Setting GPU P-State lock to: {targetState}");
-            return Task.FromResult(NVAPI.SetPerformanceState(gpu, targetState));
+
+            var supportedStates = GetSupportedPerformanceStates();
+            if (supportedStates.Count > 0 && !supportedStates.Contains(targetState))
+            {
+                Log.Instance.Trace($"P-State {targetState} is not reported as supported, skipping apply.");
+                return PStateApplyResult.Failed;
+            }
+
+            Log.Instance.Trace($"Setting GPU P-State lock to: {targetState}, pin mode: {pinMode}");
+            return NVAPI.SetPerformanceState(gpu, targetState, pinMode) ? PStateApplyResult.Applied : PStateApplyResult.Failed;
         }
         catch (Exception ex)
         {
             Log.Instance.Trace($"Failed to apply P-State {pStateId}.", ex);
-            return Task.FromResult(false);
+            return PStateApplyResult.Failed;
+        }
+        finally
+        {
+            _pStateGate.Release();
         }
     }
 

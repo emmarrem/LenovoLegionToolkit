@@ -1,11 +1,11 @@
-using LenovoLegionToolkit.Lib;
-using LenovoLegionToolkit.Lib.Utils;
-using LenovoLegionToolkit.WPF.Resources;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Media;
+using LenovoLegionToolkit.Lib;
+using LenovoLegionToolkit.Lib.Utils;
+using LenovoLegionToolkit.WPF.Resources;
 
 namespace LenovoLegionToolkit.WPF;
 
@@ -123,12 +123,21 @@ public readonly struct DashboardGroup(DashboardGroupType type, string? customNam
                 DashboardItem.WhiteKeyboardBacklight,
                 DashboardItem.PanelLogoBacklight,
                 DashboardItem.PortsBacklight,
+                DashboardItem.PowerButtonLed,
                 DashboardItem.TouchpadLock,
                 DashboardItem.FnLock,
                 DashboardItem.WinKeyLock)
         };
 
-        if (!mi.Properties.SupportsITSMode)
+        if (Compatibility.HasLenovoPowerManagementDevice() || AppFlags.Instance.Debug)
+        {
+            var chargeThresholdGroup = groups.First(g => g.Type == DashboardGroupType.Power);
+            var chargeThresholdItems = chargeThresholdGroup.Items.ToList();
+            chargeThresholdItems.Insert(3, DashboardItem.ChargeThreshold);
+            groups[0] = new(DashboardGroupType.Power, null, chargeThresholdItems.ToArray());
+        }
+
+        if (!mi.Properties.SupportsITSMode && !AppFlags.Instance.Debug)
         {
             return groups.ToArray();
         }
@@ -183,8 +192,8 @@ public readonly struct SensorGroup(SensorGroupType type, params SensorItem[] ite
             SensorItem.GpuTemperatures,
             SensorItem.GpuPower),
         new(SensorGroupType.Motherboard,
-            SensorItem.PchFanSpeed,
-            SensorItem.PchTemperature),
+            SensorItem.SystemFans,
+            SensorItem.MotherboardTemperature),
         new(SensorGroupType.Battery,
             SensorItem.BatteryState,
             SensorItem.BatteryLevel),
@@ -249,8 +258,9 @@ public readonly struct SensorSnapshot
     public double MemUsed { get; init; }
     public double MemTotal { get; init; }
     public double MemTemp { get; init; }
-    public double PchTemp { get; init; }
-    public int PchFanSpeed { get; init; }
+    public double MotherboardTemp { get; init; }
+    private readonly IReadOnlyList<FanData>? _systemFans;
+    public IReadOnlyList<FanData> SystemFans { get => _systemFans ?? []; init => _systemFans = value; }
     public double Disk1Temp { get; init; }
     public double Disk2Temp { get; init; }
 }

@@ -80,6 +80,8 @@ public partial class App
     private EventWaitHandle? _singleInstanceWaitHandle;
     private bool _showPawnIONotify;
 
+    private readonly List<Task> _deferredInitTasks = [];
+
     public new static App Current => (App)Application.Current;
     public static MainWindow? MainWindowInstance;
 
@@ -112,7 +114,6 @@ public partial class App
                     Log.Instance.Trace($"Lenovo Legion Toolkit Version {Assembly.GetEntryAssembly()?.GetName().Version}");
                 }
 
-                Compatibility.PrintControllerVersionAsync().ConfigureAwait(false);
                 InitOsd();
                 InitAppMessages();
                 LogIdentityStatus();
@@ -198,6 +199,8 @@ public partial class App
             CheckCompatibilityAsyncWrapper(AppFlags.Instance)
         );
 
+        await Compatibility.GetMachineInformationAsync();
+
         if (AppFlags.Instance.Debug)
         {
             Console.WriteLine(@"[Startup] Configuring Render Options...");
@@ -280,6 +283,8 @@ public partial class App
             await SafeInitAsync(InitHWiNFOAsync, "HWiNFO Integration");
             await SafeInitAsync(InitIpcServerAsync, "IPC Server");
         });
+
+        await Task.WhenAll(_deferredInitTasks);
     }
 
     private async Task InitializeUIAsync()
@@ -314,9 +319,13 @@ public partial class App
 
         if (AppFlags.Instance.Minimized)
         {
+            var minimizeToTray = IoCContainer.Resolve<ApplicationSettings>().Store.MinimizeToTray;
+
             mainWindow.WindowState = WindowState.Minimized;
             mainWindow.Show();
-            mainWindow.SendToTray();
+
+            if (minimizeToTray)
+                mainWindow.Hide();
         }
         else
         {
@@ -547,7 +556,7 @@ public partial class App
 
         var settingsStore = IoCContainer.Resolve<OsdSettings>().Store;
 
-        if (!settingsStore.ShowOsd)
+        if (!settingsStore.ShowOsd || !IoCContainer.Resolve<ApplicationSettings>().Store.EnableHardwareSensors)
         {
             return;
         }
@@ -726,7 +735,7 @@ public partial class App
 
             if (await feature.IsSupportedAsync())
             {
-                await feature.EnsureGodModeStateIsAppliedAsync();
+                await feature.EnsureGodModeStateIsAppliedAsync(skipThrottle: true);
             }
 
             return true;
@@ -849,42 +858,31 @@ public partial class App
         }
     }
 
-    private static async Task<bool> InitSensorsGroupControllerFeatureAsync()
+    private Task<bool> InitSensorsGroupControllerFeatureAsync()
     {
-        var settings = IoCContainer.Resolve<ApplicationSettings>();
-        var OsdSettings = IoCContainer.Resolve<OsdSettings>();
-
-        try
+        if (IoCContainer.Resolve<ApplicationSettings>().Store is { EnableHardwareSensors: false })
         {
-            if (settings.Store is { EnableHardwareSensors: false })
-            {
-                return false;
-            }
-
-            var state = await IoCContainer.Resolve<SensorsGroupController>().IsSupportedAsync();
-
-            if (state is not (LibreHardwareMonitorInitialState.Initialized or LibreHardwareMonitorInitialState.Success))
-            {
-                Current._showPawnIONotify = true;
-            }
-            else if (PawnIOHelper.GetPawnIOState() is PawnIOState.UpdateRequired or PawnIOState.ServiceNotRunning)
-            {
-                Current._showPawnIONotify = true;
-            }
-
-            return true;
+            return Task.FromResult(false);
         }
-        catch (Exception ex)
-        {
-            Log.Instance.Trace($"InitSensorsGroupControllerFeatureAsync() raised exception:", ex);
 
-            if (!ex.Message.Contains("LibreHardwareMonitor initialization failed"))
-            {
-                Current._showPawnIONotify = true;
-            }
+        _showPawnIONotify = PawnIOHelper.GetPawnIOState() is not PawnIOState.Installed;
 
-            return false;
-        }
+        _deferredInitTasks.Add(SafeInitAsync(InitSensorsHardwareAsync, "Sensors Hardware"));
+        _deferredInitTasks.Add(SafeInitAsync(InitSensorsControllerAsync, "Sensors Controller"));
+
+        return Task.FromResult(true);
+    }
+
+    private static async Task<bool> InitSensorsHardwareAsync()
+    {
+        await IoCContainer.Resolve<SensorsGroupController>().IsSupportedAsync().ConfigureAwait(false);
+        return true;
+    }
+
+    private static async Task<bool> InitSensorsControllerAsync()
+    {
+        await IoCContainer.Resolve<SensorsController>().IsSupportedAsync().ConfigureAwait(false);
+        return true;
     }
 
     private static async Task<bool> InitRgbKeyboardControllerAsync()
@@ -963,14 +961,9 @@ public partial class App
 
             return false;
         }
-        catch (InvalidOperationException)
-        {
-            Log.Instance.Trace($"Profile apply has been canceled due to AC issue.");
-            return false;
-        }
         catch (Exception ex)
         {
-            Log.Instance.Trace($"Failed to apply profile on startup: {ex.Message}", ex);
+            Log.Instance.Trace($"Failed to initialize AMD Overclocking Controller.", ex);
             return false;
         }
     }
@@ -1008,13 +1001,14 @@ public partial class App
         {
             Dispatcher.Invoke(() =>
             {
-                HandleOsdCommand(message.State);
+                HandleOsdCommand(message.State, message.SetPreference);
             });
         });
 
         var OsdSettings = IoCContainer.Resolve<OsdSettings>();
+        var settings = IoCContainer.Resolve<ApplicationSettings>();
 
-        if (OsdSettings.Store.ShowOsd)
+        if (OsdSettings.Store.ShowOsd && settings.Store.EnableHardwareSensors)
         {
             HandleOsdCommand(ToggleState.On);
         }
@@ -1034,7 +1028,7 @@ public partial class App
         });
     }
 
-    private void HandleOsdCommand(ToggleState command)
+    private void HandleOsdCommand(ToggleState command, bool setPreference = true)
     {
         var OsdSettings = IoCContainer.Resolve<OsdSettings>();
         bool shouldBeBar = OsdSettings.Store.SelectedStyleIndex == 1;
@@ -1057,8 +1051,11 @@ public partial class App
             OsdWindow?.Hide();
         }
 
-        OsdSettings.Store.ShowOsd = OsdWindow?.IsVisible ?? false;
-        OsdSettings.SynchronizeStore();
+        if (setPreference)
+        {
+            OsdSettings.Store.ShowOsd = OsdWindow?.IsVisible ?? false;
+            OsdSettings.SynchronizeStore();
+        }
     }
 
     private void EnsureCorrectOsdStyle(bool shouldBeBar)

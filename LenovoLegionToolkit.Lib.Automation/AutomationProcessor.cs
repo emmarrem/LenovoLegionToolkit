@@ -20,6 +20,7 @@ public class AutomationProcessor(
     NativeWindowsMessageListener nativeWindowsMessageListener,
     PowerStateListener powerStateListener,
     PowerModeListener powerModeListener,
+    ITSModeListener itsModeListener,
     GodModeController godModeController,
     BatteryAutoListener batteryAutoListener,
     GameAutoListener gameAutoListener,
@@ -49,6 +50,7 @@ public class AutomationProcessor(
             nativeWindowsMessageListener.Changed += NativeWindowsMessageListener_Changed;
             powerStateListener.Changed += PowerStateListener_Changed;
             powerModeListener.Changed += PowerModeListener_Changed;
+            itsModeListener.Changed += ITSModeListener_Changed;
             godModeController.PresetChanged += GodModeController_PresetChanged;
             sessionLockUnlockListener.Changed += SessionLockUnlockListener_Changed;
 
@@ -212,7 +214,7 @@ public class AutomationProcessor(
                         !pipeline.RunOnStartup &&
                         pipeline.Trigger is not OnStartupAutomationPipelineTrigger)
                     {
-                        Log.Instance.Trace($"Pipeline configured to skip startup. [name={pipeline.Name}]");
+                        Log.Instance.Trace($"Pipeline configured to skip startup. [name={pipeline.Name}, trigger={pipeline.Trigger}, id={pipeline.Id}]");
                         continue;
                     }
 
@@ -273,6 +275,12 @@ public class AutomationProcessor(
         await ProcessEvent(e).ConfigureAwait(false);
     }
 
+    private async void ITSModeListener_Changed(object? sender, ITSModeListener.ChangedEventArgs args)
+    {
+        var e = new ITSModeAutomationEvent(args.State);
+        await ProcessEvent(e).ConfigureAwait(false);
+    }
+
     private async void GodModeController_PresetChanged(object? sender, Guid presetId)
     {
         var e = new CustomModePresetAutomationEvent(presetId);
@@ -328,7 +336,7 @@ public class AutomationProcessor(
     private async Task ProcessEvent(IAutomationEvent e)
     {
         var triggerMatches = await Task.WhenAll(_pipelines.SelectMany(p => p.AllTriggers)
-                .Select(async t => await t.IsMatchingEvent(e).ConfigureAwait(false)))
+                .Select(t => IsMatchingEventSafeAsync(t, e)))
             .ConfigureAwait(false);
 
         if (!triggerMatches.Any(t => t))
@@ -344,6 +352,19 @@ public class AutomationProcessor(
     #endregion
 
     #region Helper methods
+
+    private static async Task<bool> IsMatchingEventSafeAsync(IAutomationPipelineTrigger trigger, IAutomationEvent e)
+    {
+        try
+        {
+            return await trigger.IsMatchingEvent(e).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.Instance.Trace($"Trigger evaluation failed for event {e}... [type={e.GetType().Name}, trigger={trigger}]", ex);
+            return false;
+        }
+    }
 
     private async Task UpdateListenersAsync()
     {

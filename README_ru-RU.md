@@ -33,6 +33,7 @@
 - [English](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/master/README.md)
 - [简体中文版简介](README_zh-hans.md)
 - [日本語版のREADME](README_ja-JP.md)
+- [Türkçe README](README_tr-TR.md)
 
 ---
 
@@ -108,7 +109,7 @@ Lenovo Legion Toolkit поддерживает как автоматическо
   * **Канал обновлений**: Выбор между **Stable**, **Beta** или **Dev** релизами.
   * **Периодичность**: Проверка ежедневно, еженедельно или с заданным интервалом.
 * **Бесшовное обновление поверх**: Нет необходимости удалять предыдущую версию. Установка поверх сохраняет все ваши настройки, пользовательские режимы, действия и макросы.
-* **Проверка подлинности**: Все обновления проверяются цифровой подписью Authenticode перед установкой для защиты от подделки.
+* **Проверка подлинности**: Все обновления проверяются по подписи Authenticode доверенного сертификата проекта перед установкой.
 
 #### Следующие шаги
 
@@ -135,7 +136,7 @@ LLT работает оптимально в фоновом режиме. Пер
 4. Запустите установщик
 
 > [!NOTE] 📌 Примечание
-> При установке через Scoop .NET 9 должен установиться автоматически как зависимость. В случае ошибок выполните `scoop update` и переустановите LLT с флагом `--force`.
+> При установке через Scoop .NET 9 должен установиться автоматически как зависимость. В случае ошибок выполните `scoop update`, затем `scoop update *`, чтобы обновить все пакеты, и переустановите LLT с флагом `--force`.
 
 После этого откройте Терминал и введите: `dotnet --info`. В выводе найдите раздел `.NET runtimes installed`. Вы должны увидеть строки вида:
 
@@ -422,9 +423,21 @@ LLT автоматически передаёт переменные в окру
 - `llt rgb set <preset>` — установить пресет 4-зонной RGB
 </details>
 
+### Script Console (C#)
+
+Script Console включается при запуске LLT с аргументом `--debug` (см. [Аргументы](#аргументы)) и находится в разделе **Настройки → Поведение приложения**. Она выполняет фрагменты кода C# внутри работающего приложения, с доступом к `LenovoLegionToolkit.Lib`, его контроллерам и состоянию приложения. Вывод, возвращаемое значение, время выполнения и ошибки компиляции или выполнения отображаются в окне.
+
+> [!WARNING]
+> Только для продвинутой отладки. Сценарии выполняются в процессе самого приложения, поэтому сбойный сценарий может дестабилизировать его. Валидатор блокирует API файловой системы, сети, реестра, WMI, рефлексии и запуска процессов, а директивы `#r` отклоняются.
+
 ## Пожертвования
 
-Если вам нравится использовать LLT, поддержите проект через кнопку GitHub Sponsors на странице репозитория.
+Если вам нравится использовать LLT, вы можете поддержать разработчиков:
+
+* **Dr. Skinner**: [GitHub Sponsors](https://github.com/sponsors/Metanome) · [Buy Me a Coffee](https://buymeacoffee.com/metanome)
+* **Kaguya**: [Ifdian](https://ifdian.net/a/XKaguya)
+
+Вы также можете использовать кнопку **Sponsor** в верхней части страницы репозитория.
 
 ## Благодарности
 
@@ -441,7 +454,7 @@ LLT изначально создан Bartosz Cichecki ([GitHub](https://github.
 
 ### Сторонние библиотеки
 
-LLT использует open-source библиотеки:
+LLT использует open-source библиотеки. Компоненты, размещённые в организации [LenovoLegionToolkit-Team](https://github.com/LenovoLegionToolkit-Team), — это форки, поддерживаемые этим проектом.
 
 **Основной UI и фреймворк:**
 - WPF-UI ([lepoco/wpfui](https://github.com/lepoco/wpfui))
@@ -451,11 +464,13 @@ LLT использует open-source библиотеки:
 
 **Системы и оборудование:**
 - RAMSPDToolkit ([Blacktempel/RAMSPDToolkit](https://github.com/Blacktempel/RAMSPDToolkit))
-- LibreHardwareMonitor ([LibreHardwareMonitor/LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor))
+- LibreHardwareMonitor ([LenovoLegionToolkit-Team/LibreHardwareMonitor](https://github.com/LenovoLegionToolkit-Team/LibreHardwareMonitor))
 - PawnIO ([namazso/PawnIO](https://github.com/namazso/PawnIO))
 - CoordinateSharp ([Tronald/CoordinateSharp](https://github.com/Tronald/CoordinateSharp))
-- ZenStates-Core ([irusanov/ZenStates-Core](https://github.com/irusanov/ZenStates-Core))
-- PresentMonFps ([lemutec/PresentMonFps](https://github.com/lemutec/PresentMonFps))
+- ZenStates-Core ([LenovoLegionToolkit-Team/ZenStates-Core](https://github.com/LenovoLegionToolkit-Team/ZenStates-Core))
+- PresentMonFps ([LenovoLegionToolkit-Team/PresentMonFps](https://github.com/LenovoLegionToolkit-Team/PresentMonFps))
+- NvAPIWrapper ([LenovoLegionToolkit-Team/NvAPIWrapper](https://github.com/LenovoLegionToolkit-Team/NvAPIWrapper))
+- WindowsDisplayAPI ([LenovoLegionToolkit-Team/WindowsDisplayAPI](https://github.com/LenovoLegionToolkit-Team/WindowsDisplayAPI))
 
 **Утилиты:**
 - Newtonsoft.Json ([JamesNK/Newtonsoft.Json](https://github.com/JamesNK/Newtonsoft.Json))
@@ -471,6 +486,11 @@ LLT использует open-source библиотеки:
 **Визуалы и помощники UI:**
 - PixiEditor.ColorPicker ([PixiEditor/ColorPicker](https://github.com/PixiEditor/ColorPicker))
 - WpfScreenHelper ([micdenny/WpfScreenHelper](https://github.com/micdenny/WpfScreenHelper))
+- XamlAnimatedGif ([thomaslevesque/XamlAnimatedGif](https://github.com/thomaslevesque/XamlAnimatedGif))
+
+**Скриптинг и редакторы:**
+- AvalonEdit ([icsharpcode/AvalonEdit](https://github.com/icsharpcode/AvalonEdit))
+- Roslyn scripting ([dotnet/roslyn](https://github.com/dotnet/roslyn))
 
 Полный список сторонних компонентов и лицензий см. в файле [NOTICE](NOTICE).
 
@@ -605,16 +625,17 @@ LLT использует низкоуровневые Windows API, что выз
 Редко используемые функции включаются через аргументы. Передаются как параметры или в `args.txt`.
 
 - `--trace` — логирование в `%LOCALAPPDATA%\LenovoLegionToolkit\log`
+- `--debug` — режим отладки и Script Console (⚠️ Поддержка не предоставляется)
 - `--minimized` — запуск свёрнутым в трей
 - `--skip-compat-check` — отключение проверки совместимости (⚠️ Поддержка не предоставляется)
 - `--disable-tray-tooltip` — отключение подсказки в трее
 - `--allow-all-power-modes-on-battery` — все режимы питания от батареи (⚠️ Поддержка не предоставляется)
-- `--enable-hybrid-mode-automation` — изменение Hybrid Mode через действия (⚠️ Поддержка не предоставляется)
 - `--force-disable-rgbkb` — отключение подсветки 4-зонных RGB
 - `--force-disable-spectrumkb` — отключение подсветки Spectrum per-key RGB
 - `--force-disable-lenovolighting` — отключение подсветки логотипа, портов и некоторых белых клавиатур
 - `--enable-lamp-array` — включение Lamp Array (Windows Dynamic Lighting)
 - `--experimental-gpu-working-mode` — экспериментальный метод переключения GPU (как в Legion Zone) (⚠️ Поддержка не предоставляется)
+- `--experimental-its-mode` — экспериментальный драйвер режима ITS на устройствах ThinkBook (⚠️ Поддержка не предоставляется)
 - `--proxy-url=example.com` — URL прокси-сервера
 - `--proxy-username=some_username` — имя пользователя прокси
 - `--proxy-password=some_password` — пароль прокси

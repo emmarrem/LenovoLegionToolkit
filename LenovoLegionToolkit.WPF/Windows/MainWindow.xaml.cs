@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -24,6 +25,7 @@ using LenovoLegionToolkit.Lib.Messaging.Messages;
 using LenovoLegionToolkit.Lib.Settings;
 using LenovoLegionToolkit.Lib.SoftwareDisabler;
 using LenovoLegionToolkit.Lib.Station.Services;
+using LenovoLegionToolkit.Lib.System;
 using LenovoLegionToolkit.Lib.Utils;
 using LenovoLegionToolkit.WPF.Controls.Custom;
 using LenovoLegionToolkit.WPF.Extensions;
@@ -42,12 +44,15 @@ public partial class MainWindow
     private readonly ApplicationSettings _applicationSettings = IoCContainer.Resolve<ApplicationSettings>();
     private readonly SpecialKeyListener _specialKeyListener = IoCContainer.Resolve<SpecialKeyListener>();
     private readonly DriverKeyListener _driverKeyListener = IoCContainer.Resolve<DriverKeyListener>();
+    private readonly ConsumerControlKeyListener _consumerControlKeyListener = IoCContainer.Resolve<ConsumerControlKeyListener>();
+    private readonly KeyboardHookListener _keyboardHookListener = IoCContainer.Resolve<KeyboardHookListener>();
     private readonly VantageDisabler _vantageDisabler = IoCContainer.Resolve<VantageDisabler>();
     private readonly LegionSpaceDisabler _legionSpaceDisabler = IoCContainer.Resolve<LegionSpaceDisabler>();
     private readonly LegionZoneDisabler _legionZoneDisabler = IoCContainer.Resolve<LegionZoneDisabler>();
     private readonly FnKeysDisabler _fnKeysDisabler = IoCContainer.Resolve<FnKeysDisabler>();
     private readonly INavigationService _extensionNavigationService = IoCContainer.Resolve<INavigationService>();
     private readonly UpdateChecker _updateChecker = IoCContainer.Resolve<UpdateChecker>();
+    private readonly ThemeManager _themeManager = IoCContainer.Resolve<ThemeManager>();
 
     private const double CompactMinWidth = 550;
     private const double CompactMinHeight = 480;
@@ -56,6 +61,9 @@ public partial class MainWindow
 
     private TrayHelper? _trayHelper;
     private bool _windowSizeLocked;
+
+    private string? _cachedBackgroundImagePath;
+    private BitmapImage? _cachedBackgroundImage;
 
     public bool TrayTooltipEnabled { get; init; } = true;
     public bool DisableConflictingSoftwareWarning { get; set; }
@@ -73,6 +81,10 @@ public partial class MainWindow
         Loaded += MainWindow_Loaded;
         SourceInitialized += MainWindow_SourceInitialized;
         StateChanged += MainWindow_StateChanged;
+
+        _themeManager.ThemeApplied += ThemeManager_ThemeApplied;
+
+        UpdateThemeToggle();
 
         var version = Assembly.GetEntryAssembly()?.GetName().Version;
 #if DEBUG
@@ -103,28 +115,13 @@ public partial class MainWindow
     {
         _contentGrid.Visibility = Visibility.Hidden;
 
-        if (!AppFlags.Instance.Debug)
-        {
-            if (!await KeyboardBacklightPage.IsSupportedAsync())
-            {
-                _navigationStore.Items.Remove(_keyboardItem);
-            }
-
-            if (!await LampArrayRGBKeyboardPage.IsSupportedAsync())
-            {
-                _navigationStore.Items.Remove(_lampArrayKeyboardItem);
-            }
-
-            var mi = await Compatibility.GetMachineInformationAsync();
-            if (!(mi.LegionSeries == LegionSeries.Legion_Pro_7 && mi.Generation >= 10))
-            {
-                _navigationStore.Items.Remove(_lampArrayKeyboardItem);
-            }
-        }
+        await AddNavigationItemsAsync();
 
         var actionManager = IoCContainer.Resolve<SpecialKeyActionManager>();
         actionManager.WireUp(_specialKeyListener, () => Dispatcher.Invoke(BringToForeground));
         actionManager.WireUp(_driverKeyListener);
+        actionManager.WireUp(_consumerControlKeyListener);
+        actionManager.WireUp(_keyboardHookListener, _consumerControlKeyListener);
 
         AddExtensionNavigationItems();
 
@@ -132,6 +129,7 @@ public partial class MainWindow
 
         LoadDeviceInfo();
         UpdateIndicators();
+        UpdateSupportIndicator();
         CheckForUpdates();
 
         InputBindings.Add(new KeyBinding(new ActionCommand(_navigationStore.NavigateToNext), Key.Tab, ModifierKeys.Control));
@@ -147,6 +145,24 @@ public partial class MainWindow
         _trayHelper = trayHelper;
 
         ApplyCompactLayout();
+
+        NavigateToFirstItemIfNeeded();
+    }
+
+    private void NavigateToFirstItemIfNeeded()
+    {
+        if (_rootFrame.Content is not null)
+        {
+            return;
+        }
+
+        var firstItem = _navigationStore.Items.OfType<CustomNavigationItem>().FirstOrDefault();
+        if (firstItem is null)
+        {
+            return;
+        }
+
+        _navigationStore.Navigate(firstItem.PageTag);
     }
 
     private void ApplyCompactLayout()
@@ -161,14 +177,12 @@ public partial class MainWindow
             _title.FontSize = 11;
             if (_title.Parent is Grid titleGrid)
             {
-                titleGrid.Margin = new Thickness(8, 2, 150, 2);
+                titleGrid.Margin = new Thickness(8, 0, 150, 0);
             }
 
             _openLogIndicator.LayoutTransform = new ScaleTransform(0.8, 0.8);
-            _openLogIndicator.Margin = new Thickness(0, 0, 4, 0);
-
             _deviceInfoIndicator.LayoutTransform = new ScaleTransform(0.8, 0.8);
-            _deviceInfoIndicator.Margin = new Thickness(0, 0, 4, 0);
+            _themeToggle.LayoutTransform = new ScaleTransform(0.8, 0.8);
 
             foreach (var item in _navigationStore.Items.OfType<Wpf.Ui.Controls.NavigationItem>())
             {
@@ -196,6 +210,7 @@ public partial class MainWindow
             _legionSpaceIndicator.Padding = new Thickness(4, 2, 4, 2);
             _fnKeysIndicator.Padding = new Thickness(4, 2, 4, 2);
             _updateIndicator.Padding = new Thickness(4, 2, 4, 2);
+            _supportIndicator.Padding = new Thickness(4, 2, 4, 2);
         }
     }
 
@@ -209,9 +224,9 @@ public partial class MainWindow
 
         if (_applicationSettings.Store.MinimizeOnClose)
         {
-            Log.Instance.Trace($"Minimizing...");
+            Log.Instance.Trace($"Minimizing to tray...");
 
-            WindowState = WindowState.Minimized;
+            Hide();
             e.Cancel = true;
         }
         else
@@ -224,9 +239,13 @@ public partial class MainWindow
 
     private void MainWindow_Closed(object? sender, EventArgs args)
     {
+        _themeManager.ThemeApplied -= ThemeManager_ThemeApplied;
+
         _trayHelper?.Dispose();
         _trayHelper = null;
     }
+
+    private void ThemeManager_ThemeApplied(object? sender, EventArgs e) => UpdateThemeToggle();
 
     private void MainWindow_StateChanged(object? sender, EventArgs e)
     {
@@ -238,14 +257,15 @@ public partial class MainWindow
             return;
         }
 
+        UpdateEfficiencyMode();
+
         switch (WindowState)
         {
             case WindowState.Minimized:
-                SetEfficiencyMode(true);
-                SendToTray();
+                if (_applicationSettings.Store.MinimizeToTray)
+                    Hide();
                 break;
             case WindowState.Normal:
-                SetEfficiencyMode(false);
                 BringToForeground();
                 break;
         }
@@ -256,6 +276,8 @@ public partial class MainWindow
         var settings = IoCContainer.Resolve<ApplicationSettings>();
         ApplyWindowLock(settings.Store.LockWindowSize);
         Topmost = settings.Store.AlwaysOnTop;
+
+        UpdateEfficiencyMode();
 
         if (!IsVisible)
             return;
@@ -285,6 +307,39 @@ public partial class MainWindow
             WindowChrome.SetWindowChrome(this, newChrome);
         }
     }
+
+    private async Task AddNavigationItemsAsync()
+    {
+        await _navigationStore.TryAddAsync("dashboard", typeof(DashboardPage), Resource.MainWindow_NavigationItem_Dashboard, SymbolRegular.Home24);
+        await _navigationStore.TryAddAsync("keyboardBacklight", typeof(KeyboardBacklightPage), Resource.MainWindow_NavigationItem_Keyboard, SymbolRegular.Keyboard24, IsKeyboardBacklightSupportedAsync);
+        await _navigationStore.TryAddAsync("lampArrayKeyboardBacklight", typeof(LampArrayRGBKeyboardPage), Resource.MainWindow_NavigationItem_Keyboard, SymbolRegular.Keyboard24, IsLampArrayKeyboardSupportedAsync);
+        await _navigationStore.TryAddAsync("battery", typeof(BatteryPage), Resource.MainWindow_NavigationItem_Battery, SymbolRegular.BatteryCheckmark24, IsBatterySupportedAsync);
+        await _navigationStore.TryAddAsync("automation", typeof(AutomationPage), Resource.MainWindow_NavigationItem_Actions, SymbolRegular.Flash24);
+        await _navigationStore.TryAddAsync("macro", typeof(MacroPage), Resource.MainWindow_NavigationItem_Macro, SymbolRegular.ReceiptPlay24);
+        await _navigationStore.TryAddAsync("packages", typeof(PackagesPage), Resource.MainWindow_NavigationItem_Packages, SymbolRegular.Box24);
+    }
+
+    private static async Task<bool> IsKeyboardBacklightSupportedAsync()
+        => AppFlags.Instance.Debug || await KeyboardBacklightPage.IsSupportedAsync();
+
+    private static async Task<bool> IsLampArrayKeyboardSupportedAsync()
+    {
+        if (AppFlags.Instance.Debug)
+        {
+            return true;
+        }
+
+        if (!await LampArrayRGBKeyboardPage.IsSupportedAsync())
+        {
+            return false;
+        }
+
+        var mi = await Compatibility.GetMachineInformationAsync();
+
+        return mi.Generation >= 10;
+    }
+
+    private static Task<bool> IsBatterySupportedAsync() => Task.FromResult(Battery.IsBatteryPresent);
 
     private void AddExtensionNavigationItems()
     {
@@ -319,6 +374,35 @@ public partial class MainWindow
         OpenLog();
     }
 
+    private void ThemeToggle_Click(object sender, MouseButtonEventArgs e) => CycleTheme();
+
+    private void CycleTheme()
+    {
+        var values = Enum.GetValues<Theme>();
+        var next = values[((int)_applicationSettings.Store.Theme + 1) % values.Length];
+
+        _applicationSettings.Store.Theme = next;
+        _applicationSettings.SynchronizeStore();
+
+        _themeManager.Apply();
+    }
+
+    private void UpdateThemeToggle()
+    {
+        var theme = _applicationSettings.Store.Theme;
+
+        _themeToggleIcon.Symbol = theme switch
+        {
+            Theme.Light => SymbolRegular.WeatherSunny24,
+            Theme.Dark => SymbolRegular.WeatherMoon24,
+            _ => SymbolRegular.CircleHalfFill24
+        };
+
+        var name = theme.GetDisplayName();
+        _themeToggle.ToolTip = name;
+        AutomationProperties.SetName(_themeToggle, name);
+    }
+
     private void DeviceInfoIndicator_Click(object sender, MouseButtonEventArgs e) => ShowDeviceInfoWindow();
 
     private void DeviceInfoIndicator_KeyDown(object sender, KeyEventArgs e)
@@ -337,6 +421,32 @@ public partial class MainWindow
             return;
 
         ShowUpdateWindow();
+    }
+
+    private void UpdateSupportIndicator()
+    {
+        _supportIndicator.Visibility = !_applicationSettings.Store.SupportIndicatorDismissed
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private void SupportIndicator_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => OpenDonatePage();
+
+    private void SupportIndicator_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not Key.Enter and not Key.Space)
+            return;
+
+        OpenDonatePage();
+    }
+
+    private void OpenDonatePage()
+    {
+        _applicationSettings.Store.SupportIndicatorDismissed = true;
+        _applicationSettings.SynchronizeStore();
+        UpdateSupportIndicator();
+
+        _navigationStore.Navigate("donate");
     }
 
     private async void LoadDeviceInfo()
@@ -419,7 +529,7 @@ public partial class MainWindow
                             {
                                 _updateIndicator.Visibility = Visibility.Collapsed;
 
-                                if (manualCheck && WindowState != WindowState.Minimized)
+                                if (manualCheck && IsVisibleToUser)
                                 {
                                     switch (_updateChecker.Status)
                                     {
@@ -443,7 +553,7 @@ public partial class MainWindow
                                     string.Format(Resource.MainWindow_UpdateAvailableWithVersion, versionNumber);
                                 _updateIndicator.Visibility = Visibility.Visible;
 
-                                if (WindowState == WindowState.Minimized)
+                                if (!IsVisibleToUser)
                                     MessagingCenter.Publish(new NotificationMessage(NotificationType.UpdateAvailable, versionNumber));
                             }
                         }, TaskScheduler.FromCurrentSynchronizationContext());
@@ -536,25 +646,30 @@ public partial class MainWindow
         window.ShowDialog();
     }
 
-    public void SendToTray()
-    {
-        if (!_applicationSettings.Store.MinimizeToTray)
-            return;
-
-        SetEfficiencyMode(true);
-        Hide();
-        ShowInTaskbar = true;
-    }
-
     public void SetMainWindowBackgroundImage(string filePath)
     {
+        if (_cachedBackgroundImage is not null && _cachedBackgroundImagePath == filePath)
+        {
+            _backgroundImage.ImageSource = _cachedBackgroundImage;
+            return;
+        }
+
         BitmapImage bitmap = new BitmapImage();
         bitmap.BeginInit();
         bitmap.UriSource = new Uri(filePath);
         bitmap.CacheOption = BitmapCacheOption.OnLoad;
         bitmap.EndInit();
+        bitmap.Freeze();
+
+        _cachedBackgroundImagePath = filePath;
+        _cachedBackgroundImage = bitmap;
+
         _backgroundImage.ImageSource = bitmap;
     }
+
+    private bool IsVisibleToUser => IsVisible && WindowState != WindowState.Minimized;
+
+    private void UpdateEfficiencyMode() => SetEfficiencyMode(!IsVisibleToUser);
 
     private static unsafe void SetEfficiencyMode(bool enabled)
     {

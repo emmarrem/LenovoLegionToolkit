@@ -19,43 +19,26 @@ public class GameAutoListener : AbstractAutoListener<GameAutoListener.ChangedEve
         public bool Running { get; } = running;
     }
 
-    private class ProcessEqualityComparer : IEqualityComparer<Process>
-    {
-        public bool Equals(Process? x, Process? y)
-        {
-            if (ReferenceEquals(x, y)) return true;
-            if (x is null) return false;
-            if (y is null) return false;
-            if (x.GetType() != y.GetType()) return false;
-            return x.Id == y.Id;
-        }
-
-        public int GetHashCode(Process obj) => obj.Id;
-    }
-
     private static readonly Lock Lock = new();
 
     private readonly InstanceStartedEventAutoAutoListener _instanceStartedEventAutoAutoListener;
-
     private readonly GameConfigStoreDetector _gameConfigStoreDetector;
     private readonly EffectiveGameModeDetector _effectiveGameModeDetector;
     private readonly GPUController _gpuController;
     private readonly ApplicationSettings _settings;
 
     private readonly HashSet<ProcessInfo> _detectedGamePathsCache = [];
-    private readonly HashSet<Process> _processCache = new(new ProcessEqualityComparer());
-    private readonly HashSet<Process> _gameModePinnedProcesses = new(new ProcessEqualityComparer());
-
+    private readonly Dictionary<int, Process> _processCache = [];
+    private readonly Dictionary<int, Process> _gameModePinnedProcesses = [];
     private bool _lastState;
     private bool _preserveStateOnNextStart;
+    private bool _isListening;
 
-    public GameAutoListener(InstanceStartedEventAutoAutoListener instanceStartedEventAutoAutoListener,
-        GPUController gpuController, ApplicationSettings settings)
+    public GameAutoListener(InstanceStartedEventAutoAutoListener instanceStartedEventAutoAutoListener, GPUController gpuController, ApplicationSettings settings)
     {
         _instanceStartedEventAutoAutoListener = instanceStartedEventAutoAutoListener;
         _gpuController = gpuController;
         _settings = settings;
-
         _gameConfigStoreDetector = new GameConfigStoreDetector();
         _gameConfigStoreDetector.GamesDetected += GameConfigStoreDetectorGamesConfigStoreDetected;
 
@@ -65,127 +48,127 @@ public class GameAutoListener : AbstractAutoListener<GameAutoListener.ChangedEve
 
     protected override async Task StartAsync()
     {
-        lock (Lock)
+        var toCleanup = new HashSet<Process>(ReferenceEqualityComparer.Instance);
+        var toDispose = new HashSet<Process>(ReferenceEqualityComparer.Instance);
+
+        try
         {
-            var checkIncluded = _settings.Store.IncludedProcesses.Count > 0;
-            var checkGameConfigStore = _settings.Store.GameDetection.UseGameConfigStore;
-
-            if (checkGameConfigStore)
+            lock (Lock)
             {
-                foreach (var gamePath in GameConfigStoreDetector.GetDetectedGamePaths())
-                    _detectedGamePathsCache.Add(gamePath);
-            }
+                _isListening = true;
+                var checkIncluded = _settings.Store.IncludedProcesses.Count > 0;
+                var checkGameConfigStore = _settings.Store.GameDetection.UseGameConfigStore;
 
-            if (_preserveStateOnNextStart)
-            {
-                _preserveStateOnNextStart = false;
-                Log.Instance.Trace($"Validating preserved process cache against current rules ({_processCache.Count} process(es))...");
-
-                var disqualified = new List<Process>();
-                foreach (var process in _processCache)
+                if (checkGameConfigStore)
                 {
-                    try
+                    foreach (var gamePath in GameConfigStoreDetector.GetDetectedGamePaths())
                     {
-                        if (process.HasExited)
-                        {
-                            disqualified.Add(process);
-                            continue;
-                        }
-
-                        var processName = process.ProcessName;
-                        if (IsBlacklisted(processName))
-                        {
-                            Log.Instance.Trace($"Preserved process is now blacklisted: {processName} [pid={process.Id}].");
-                            disqualified.Add(process);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Instance.Trace($"Failed to validate preserved process {process.Id}.", ex);
-                        disqualified.Add(process);
+                        _detectedGamePathsCache.Add(gamePath);
                     }
                 }
 
-                foreach (var process in disqualified)
+                if (_preserveStateOnNextStart)
                 {
-                    _processCache.Remove(process);
-                    _gameModePinnedProcesses.Remove(process);
-                    Detach(process);
-                    DisposeProcess(process);
-                }
+                    _preserveStateOnNextStart = false;
+                    Log.Instance.Trace($"Validating preserved process cache against current rules ({_processCache.Count} process(es))...");
+                    var disqualified = new List<int>();
 
-                if (disqualified.Count > 0)
-                {
-                    Log.Instance.Trace($"Evicted {disqualified.Count} process(es) during re-validation. Remaining: {_processCache.Count}.");
-                }
-
-                var hasActiveGames = _processCache.Count > 0;
-                _lastState = hasActiveGames;
-                if (!hasActiveGames)
-                {
-                    Log.Instance.Trace($"All active games disqualified during restart.");
-                    RaiseChanged(new ChangedEventArgs(false));
-                }
-            }
-
-            if (checkIncluded || checkGameConfigStore)
-            {
-                var included = checkIncluded
-                    ? _settings.Store.IncludedProcesses.ToHashSet(StringComparer.OrdinalIgnoreCase)
-                    : null;
-
-                foreach (var process in Process.GetProcesses())
-                {
-                    try
+                    foreach (var pair in _processCache)
                     {
-                        if (process.Id <= 4 || process.HasExited)
+                        try
                         {
-                            DisposeProcess(process);
-                            continue;
-                        }
-
-                        if (_processCache.Contains(process))
-                        {
-                            DisposeProcess(process);
-                            continue;
-                        }
-
-                        var processName = process.ProcessName;
-                        var isIncludedGame = included?.Contains(processName) ?? false;
-
-                        string? processPath = null;
-                        var isConfigStoreGame = false;
-                        if (!isIncludedGame && checkGameConfigStore && !IsBlacklisted(processName))
-                        {
-                            processPath = process.GetFileName();
-                            if (!string.IsNullOrEmpty(processPath))
+                            if (pair.Value.HasExited)
                             {
-                                var processInfo = ProcessInfo.FromPath(processPath);
-                                isConfigStoreGame = _detectedGamePathsCache.Contains(processInfo);
+                                disqualified.Add(pair.Key);
+                                continue;
+                            }
+
+                            var processName = pair.Value.ProcessName;
+                            if (IsBlacklisted(processName))
+                            {
+                                Log.Instance.Trace($"Preserved process is now blacklisted: {processName} [pid={pair.Key}].");
+                                disqualified.Add(pair.Key);
                             }
                         }
-
-                        if (isIncludedGame || isConfigStoreGame)
+                        catch (Exception ex)
                         {
-                            processPath ??= process.GetFileName();
-                            var source = isIncludedGame ? "Included" : "Known Game List";
-                            Log.Instance.Trace($"Found already running game: {processName} [Source: {source}] [pid={process.Id}, path={processPath ?? "Unknown"}]");
-                            Attach(process);
-                            _processCache.Add(process);
-                            RaiseChangedIfNeeded(true);
-                        }
-                        else
-                        {
-                            DisposeProcess(process);
+                            Log.Instance.Trace($"Failed to validate preserved process {pair.Key}.", ex);
+                            disqualified.Add(pair.Key);
                         }
                     }
-                    catch (Exception ex)
+
+                    foreach (var id in disqualified)
                     {
-                        Log.Instance.Trace($"Failed to check process {process.Id}.", ex);
-                        DisposeProcess(process);
+                        RemoveTrackedProcess(id, toCleanup);
+                    }
+
+                    if (disqualified.Count > 0)
+                    {
+                        Log.Instance.Trace($"Evicted {disqualified.Count} process(es) during re-validation. Remaining: {_processCache.Count}.");
+                    }
+
+                    RaiseChangedIfNeeded();
+                }
+
+                if (checkIncluded || checkGameConfigStore)
+                {
+                    var included = checkIncluded
+                        ? _settings.Store.IncludedProcesses.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                        : null;
+
+                    foreach (var process in Process.GetProcesses())
+                    {
+                        var retained = false;
+
+                        try
+                        {
+                            var id = process.Id;
+                            if (id <= 4 || process.HasExited || _processCache.ContainsKey(id))
+                            {
+                                continue;
+                            }
+
+                            var processName = process.ProcessName;
+                            var isIncludedGame = included?.Contains(processName) ?? false;
+                            string? processPath = null;
+                            var isConfigStoreGame = false;
+
+                            if (!isIncludedGame && checkGameConfigStore && !IsBlacklisted(processName))
+                            {
+                                processPath = process.GetFileName();
+                                if (!string.IsNullOrEmpty(processPath))
+                                {
+                                    isConfigStoreGame = _detectedGamePathsCache.Contains(ProcessInfo.FromPath(processPath));
+                                }
+                            }
+
+                            if (isIncludedGame || isConfigStoreGame)
+                            {
+                                processPath ??= process.GetFileName();
+                                var source = isIncludedGame ? "Included" : "Known Game List";
+                                Log.Instance.Trace($"Found already running game: {processName} [Source: {source}] [pid={id}, path={processPath ?? "Unknown"}]");
+                                retained = TryTrackProcess(process, id, toCleanup);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Instance.Trace($"Failed to check process {TryGetId(process)?.ToString() ?? "Unknown"}.", ex);
+                        }
+                        finally
+                        {
+                            if (!retained && !toCleanup.Contains(process))
+                            {
+                                toDispose.Add(process);
+                            }
+                        }
                     }
                 }
             }
+        }
+        finally
+        {
+            CleanupProcesses(toCleanup);
+            DisposeProcesses(toDispose);
         }
 
         if (_settings.Store.GameDetection.UseDiscreteGPU)
@@ -196,36 +179,7 @@ public class GameAutoListener : AbstractAutoListener<GameAutoListener.ChangedEve
             try
             {
                 var status = await _gpuController.RefreshNowAsync().ConfigureAwait(false);
-                lock (Lock)
-                {
-                    foreach (var process in status.Processes)
-                    {
-                        try
-                        {
-                            if (process.HasExited)
-                                continue;
-
-                            var processName = process.ProcessName;
-
-                            if (IsBlacklisted(processName))
-                                continue;
-
-                            if (!_processCache.Contains(process))
-                            {
-                                var processPath = process.GetFileName();
-                                Log.Instance.Trace(
-                                    $"Found already running game: {processName} [Source: Discrete GPU] [pid={process.Id}, path={processPath ?? "Unknown"}]");
-                                Attach(process);
-                                _processCache.Add(process);
-                                RaiseChangedIfNeeded(true);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Instance.Trace($"Failed to check GPU process {process.Id}.", ex);
-                        }
-                    }
-                }
+                HandleGpuProcesses(status, true);
             }
             catch (Exception ex)
             {
@@ -234,60 +188,81 @@ public class GameAutoListener : AbstractAutoListener<GameAutoListener.ChangedEve
         }
 
         if (_settings.Store.GameDetection.UseGameConfigStore)
+        {
             await _gameConfigStoreDetector.StartAsync(_detectedGamePathsCache).ConfigureAwait(false);
+        }
 
         if (_settings.Store.GameDetection.UseEffectiveGameMode)
         {
             await _effectiveGameModeDetector.StartAsync().ConfigureAwait(false);
+            var pinnedCleanup = new HashSet<Process>(ReferenceEqualityComparer.Instance);
+            var pinnedDisposals = new HashSet<Process>(ReferenceEqualityComparer.Instance);
 
-            lock (Lock)
+            try
             {
-                if (_effectiveGameModeDetector.IsActive)
+                lock (Lock)
                 {
-                    Log.Instance.Trace($"Game Mode already active on startup, checking foreground process...");
-                    TryPinForegroundProcess();
+                    if (_isListening && _effectiveGameModeDetector.IsActive)
+                    {
+                        Log.Instance.Trace($"Game Mode already active on startup, checking foreground process...");
+                        TryPinForegroundProcess(pinnedCleanup, pinnedDisposals);
+                    }
                 }
+            }
+            finally
+            {
+                CleanupProcesses(pinnedCleanup);
+                DisposeProcesses(pinnedDisposals);
             }
         }
 
-        await _instanceStartedEventAutoAutoListener.SubscribeChangedAsync(InstanceStartedEventAutoAutoListener_Changed)
-            .ConfigureAwait(false);
+        await _instanceStartedEventAutoAutoListener.SubscribeChangedAsync(InstanceStartedEventAutoAutoListener_Changed).ConfigureAwait(false);
     }
 
     protected override async Task StopAsync()
     {
-        await _instanceStartedEventAutoAutoListener
-            .UnsubscribeChangedAsync(InstanceStartedEventAutoAutoListener_Changed).ConfigureAwait(false);
+        lock (Lock)
+        {
+            _isListening = false;
+        }
 
+        await _instanceStartedEventAutoAutoListener.UnsubscribeChangedAsync(InstanceStartedEventAutoAutoListener_Changed).ConfigureAwait(false);
         await _gameConfigStoreDetector.StopAsync().ConfigureAwait(false);
         await _effectiveGameModeDetector.StopAsync().ConfigureAwait(false);
 
         _gpuController.Refreshed -= GpuController_Refreshed;
+        var toCleanup = new HashSet<Process>(ReferenceEqualityComparer.Instance);
 
-        lock (Lock)
+        try
         {
-            if (!_preserveStateOnNextStart)
+            lock (Lock)
             {
-                foreach (var process in _processCache)
+                if (!_preserveStateOnNextStart)
                 {
-                    Detach(process);
-                    DisposeProcess(process);
-                }
+                    foreach (var id in _processCache.Keys.ToArray())
+                    {
+                        RemoveTrackedProcess(id, toCleanup);
+                    }
 
-                _processCache.Clear();
-                _detectedGamePathsCache.Clear();
-                _gameModePinnedProcesses.Clear();
-                if (_lastState)
+                    foreach (var process in _gameModePinnedProcesses.Values)
+                    {
+                        toCleanup.Add(process);
+                    }
+
+                    _gameModePinnedProcesses.Clear();
+                    _detectedGamePathsCache.Clear();
+                    RaiseChangedIfNeeded();
+                }
+                else
                 {
-                    _lastState = false;
-                    RaiseChanged(new ChangedEventArgs(false));
+                    _detectedGamePathsCache.Clear();
+                    Log.Instance.Trace($"Preserving process cache during restart: {_processCache.Count} process(es).");
                 }
             }
-            else
-            {
-                _detectedGamePathsCache.Clear();
-                Log.Instance.Trace($"Preserving process cache during restart: {_processCache.Count} process(es).");
-            }
+        }
+        finally
+        {
+            CleanupProcesses(toCleanup);
         }
     }
 
@@ -310,141 +285,205 @@ public class GameAutoListener : AbstractAutoListener<GameAutoListener.ChangedEve
 
     private void GpuController_Refreshed(object? sender, GPUStatus e)
     {
-        lock (Lock)
-        {
-            foreach (var process in e.Processes)
-            {
-                try
-                {
-                    if (process.HasExited)
-                        continue;
-
-                    var processName = process.ProcessName;
-
-                    if (IsBlacklisted(processName))
-                        continue;
-
-                    if (!_processCache.Contains(process))
-                    {
-                        var processPath = process.GetFileName();
-                        Log.Instance.Trace($"Game detected: {processName} [Source: Discrete GPU] [pid={process.Id}, path={processPath ?? "Unknown"}]");
-                        Attach(process);
-                        _processCache.Add(process);
-                        RaiseChangedIfNeeded(true);
-                    }
-                }
-                catch { /* Ignore */ }
-            }
-        }
+        HandleGpuProcesses(e, false);
     }
 
-    private void GameConfigStoreDetectorGamesConfigStoreDetected(object? sender,
-        GameConfigStoreDetector.GameDetectedEventArgs e)
+    private void HandleGpuProcesses(GPUStatus status, bool initial)
     {
-        lock (Lock)
+        var toCleanup = new HashSet<Process>(ReferenceEqualityComparer.Instance);
+
+        try
         {
-            _detectedGamePathsCache.Clear();
-
-            foreach (var game in e.Games)
+            lock (Lock)
             {
-                _detectedGamePathsCache.Add(game);
+                if (!_isListening)
+                {
+                    return;
+                }
 
-                foreach (var process in Process.GetProcessesByName(game.Name))
+                foreach (var process in status.Processes)
                 {
                     try
                     {
-                        if (IsBlacklisted(process.ProcessName))
+                        if (process.HasExited)
                         {
-                            DisposeProcess(process);
+                            continue;
+                        }
+
+                        var processName = process.ProcessName;
+                        if (IsBlacklisted(processName))
+                        {
+                            continue;
+                        }
+
+                        var id = process.Id;
+                        if (_processCache.ContainsKey(id))
+                        {
                             continue;
                         }
 
                         var processPath = process.GetFileName();
-
-                        if (processPath is not null && game.ExecutablePath is not null &&
-                            !game.ExecutablePath.Equals(processPath, StringComparison.OrdinalIgnoreCase))
-                        {
-                            DisposeProcess(process);
-                            continue;
-                        }
-
-                        if (!_processCache.Contains(process))
-                        {
-                            Log.Instance.Trace($"Game detected: {process.ProcessName} [Source: Known Game List] [pid={process.Id}, path={processPath ?? game.ExecutablePath ?? "Unknown"}]");
-                            Attach(process);
-                            _processCache.Add(process);
-                        }
-                        else
-                        {
-                            DisposeProcess(process);
-                        }
-
-                        RaiseChangedIfNeeded(true);
+                        var prefix = initial ? "Found already running game" : "Game detected";
+                        Log.Instance.Trace($"{prefix}: {processName} [Source: Discrete GPU] [pid={id}, path={processPath ?? "Unknown"}]");
+                        TryTrackProcess(process, id, toCleanup);
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
-                        Log.Instance.Trace($"Can't get game \"{game}\" details.");
-                        DisposeProcess(process);
+                        Log.Instance.Trace($"Failed to handle GPU process {TryGetId(process)?.ToString() ?? "Unknown"}.", ex);
                     }
                 }
             }
+        }
+        catch (Exception ex)
+        {
+            Log.Instance.Trace($"Failed to handle GPU process refresh.", ex);
+        }
+        finally
+        {
+            CleanupProcesses(toCleanup);
+        }
+    }
+
+    private void GameConfigStoreDetectorGamesConfigStoreDetected(object? sender, GameConfigStoreDetector.GameDetectedEventArgs e)
+    {
+        var toCleanup = new HashSet<Process>(ReferenceEqualityComparer.Instance);
+        var toDispose = new HashSet<Process>(ReferenceEqualityComparer.Instance);
+
+        try
+        {
+            lock (Lock)
+            {
+                if (!_isListening)
+                {
+                    return;
+                }
+
+                _detectedGamePathsCache.Clear();
+                foreach (var game in e.Games)
+                {
+                    _detectedGamePathsCache.Add(game);
+                    foreach (var process in Process.GetProcessesByName(game.Name))
+                    {
+                        var retained = false;
+
+                        try
+                        {
+                            if (process.HasExited || IsBlacklisted(process.ProcessName))
+                            {
+                                continue;
+                            }
+
+                            var processPath = process.GetFileName();
+                            if (processPath is not null && game.ExecutablePath is not null &&
+                                !game.ExecutablePath.Equals(processPath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                continue;
+                            }
+
+                            var id = process.Id;
+                            if (!_processCache.ContainsKey(id))
+                            {
+                                Log.Instance.Trace($"Game detected: {process.ProcessName} [Source: Known Game List] [pid={id}, path={processPath ?? game.ExecutablePath ?? "Unknown"}]");
+                                retained = TryTrackProcess(process, id, toCleanup);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Instance.Trace($"Can't get game \"{game}\" details.", ex);
+                        }
+                        finally
+                        {
+                            if (!retained && !toCleanup.Contains(process))
+                            {
+                                toDispose.Add(process);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Instance.Trace($"Failed to handle known game list update.", ex);
+        }
+        finally
+        {
+            CleanupProcesses(toCleanup);
+            DisposeProcesses(toDispose);
         }
     }
 
     private void EffectiveGameModeDetectorChanged(object? sender, bool e)
     {
-        lock (Lock)
+        var toCleanup = new HashSet<Process>(ReferenceEqualityComparer.Instance);
+        var toDispose = new HashSet<Process>(ReferenceEqualityComparer.Instance);
+
+        try
         {
-            if (e)
+            lock (Lock)
             {
-                TryPinForegroundProcess();
-            }
-            else
-            {
-                if (_gameModePinnedProcesses.Count > 0)
+                if (!_isListening)
                 {
-                    var toRelease = new List<Process>();
-                    foreach (var process in _gameModePinnedProcesses)
+                    return;
+                }
+
+                if (e)
+                {
+                    TryPinForegroundProcess(toCleanup, toDispose);
+                }
+                else
+                {
+                    var toRelease = new List<int>();
+                    foreach (var pair in _gameModePinnedProcesses)
                     {
                         try
                         {
-                            if (process.HasExited)
+                            if (pair.Value.HasExited)
                             {
-                                toRelease.Add(process);
+                                toRelease.Add(pair.Key);
                             }
                         }
                         catch
                         {
-                            toRelease.Add(process);
+                            toRelease.Add(pair.Key);
                         }
                     }
 
-                    foreach (var process in toRelease)
+                    foreach (var id in toRelease)
                     {
-                        Log.Instance.Trace($"Game Mode ended and process exited: {process.ProcessName} [Source: Windows Game Mode] [pid={process.Id}].");
-                        _gameModePinnedProcesses.Remove(process);
-                        _processCache.Remove(process);
-                        Detach(process);
-                        DisposeProcess(process);
+                        if (_gameModePinnedProcesses.TryGetValue(id, out var process))
+                        {
+                            Log.Instance.Trace($"Game Mode ended and process exited: {GetProcessName(process)} [Source: Windows Game Mode] [pid={id}].");
+                        }
+
+                        RemoveTrackedProcess(id, toCleanup);
                     }
 
-                    if (_processCache.Count == 0)
-                    {
-                        RaiseChangedIfNeeded(false);
-                    }
+                    RaiseChangedIfNeeded();
+                }
+
+                if (_processCache.Count != 0)
+                {
+                    Log.Instance.Trace($"Game Mode deactivation ignored: process cache is not empty ({_processCache.Count} active game(s)).");
                 }
             }
-
-            if (_processCache.Count != 0)
-            {
-                Log.Instance.Trace($"Game Mode deactivation ignored: process cache is not empty ({_processCache.Count} active game(s)).");
-                return;
-            }
+        }
+        catch (Exception ex)
+        {
+            Log.Instance.Trace($"Failed to handle Windows Game Mode state change.", ex);
+        }
+        finally
+        {
+            CleanupProcesses(toCleanup);
+            DisposeProcesses(toDispose);
         }
     }
 
-    private unsafe void TryPinForegroundProcess()
+    private unsafe void TryPinForegroundProcess(HashSet<Process> toCleanup, HashSet<Process> toDispose)
     {
+        Process? process = null;
+        var retained = false;
+
         try
         {
             var hWnd = Windows.Win32.PInvoke.GetForegroundWindow();
@@ -455,61 +494,52 @@ public class GameAutoListener : AbstractAutoListener<GameAutoListener.ChangedEve
 
             uint processId = 0;
             Windows.Win32.PInvoke.GetWindowThreadProcessId(hWnd, &processId);
-
             if (processId == 0)
             {
                 return;
             }
 
-            var process = Process.GetProcessById((int)processId);
-            try
+            process = Process.GetProcessById((int)processId);
+            var id = process.Id;
+            if (process.HasExited || _processCache.ContainsKey(id))
             {
-                if (process.HasExited)
-                {
-                    DisposeProcess(process);
-                    return;
-                }
-
-                if (_processCache.Contains(process))
-                {
-                    DisposeProcess(process);
-                    return;
-                }
-
-                var processName = process.ProcessName;
-                var processPath = process.GetFileName();
-                if (IsBlacklisted(processName))
-                {
-                    Log.Instance.Trace($"Ignoring blacklisted process: {processName} [Source: Windows Game Mode] [pid={process.Id}, path={processPath ?? "Unknown"}].");
-                    DisposeProcess(process);
-                    return;
-                }
-
-                Log.Instance.Trace($"Game detected: {processName} [Source: Windows Game Mode] [pid={process.Id}, path={processPath ?? "Unknown"}].");
-                Attach(process);
-                _processCache.Add(process);
-                _gameModePinnedProcesses.Add(process);
-                RaiseChangedIfNeeded(true);
+                return;
             }
-            catch
+
+            var processName = process.ProcessName;
+            var processPath = process.GetFileName();
+            if (IsBlacklisted(processName))
             {
-                DisposeProcess(process);
-                throw;
+                Log.Instance.Trace($"Ignoring blacklisted process: {processName} [Source: Windows Game Mode] [pid={id}, path={processPath ?? "Unknown"}].");
+                return;
             }
+
+            Log.Instance.Trace($"Game detected: {processName} [Source: Windows Game Mode] [pid={id}, path={processPath ?? "Unknown"}].");
+            retained = TryTrackProcess(process, id, toCleanup, pinGameMode: true);
         }
         catch (Exception ex)
         {
             Log.Instance.Trace($"Failed to pin process on Game Mode detection.", ex);
         }
+        finally
+        {
+            if (process is not null && !retained)
+            {
+                toCleanup.Add(process);
+            }
+        }
     }
-
     private bool IsBlacklisted(string processName)
     {
         if (_settings.Store.IncludedProcesses.Contains(processName, StringComparer.OrdinalIgnoreCase))
+        {
             return false;
+        }
 
         if (_settings.Store.ExcludedProcesses.Contains(processName, StringComparer.OrdinalIgnoreCase))
+        {
             return true;
+        }
 
         return processName.Equals("explorer", StringComparison.OrdinalIgnoreCase)
                || processName.Equals("Lenovo Legion Toolkit", StringComparison.OrdinalIgnoreCase)
@@ -559,39 +589,47 @@ public class GameAutoListener : AbstractAutoListener<GameAutoListener.ChangedEve
                || processName.Equals("Agent", StringComparison.OrdinalIgnoreCase);
     }
 
-    private void InstanceStartedEventAutoAutoListener_Changed(object? sender,
-        InstanceStartedEventAutoAutoListener.ChangedEventArgs e)
+    private void InstanceStartedEventAutoAutoListener_Changed(object? sender, InstanceStartedEventAutoAutoListener.ChangedEventArgs e)
     {
-        lock (Lock)
+        var toCleanup = new HashSet<Process>(ReferenceEqualityComparer.Instance);
+        var toDispose = new HashSet<Process>(ReferenceEqualityComparer.Instance);
+        Process? startedProcess = null;
+        var retained = false;
+
+        try
         {
-            if (e.ProcessId < 0)
-                return;
-
-            var isIncluded = _settings.Store.IncludedProcesses.Contains(e.ProcessName, StringComparer.OrdinalIgnoreCase);
-            var isGameConfigStore = _settings.Store.GameDetection.UseGameConfigStore &&
-                                    _detectedGamePathsCache.Any(p =>
-                                        e.ProcessName.Equals(p.Name, StringComparison.OrdinalIgnoreCase));
-
-            if (!isIncluded && !isGameConfigStore)
-                return;
-
-            Process? startedProcess = null;
-            try
+            lock (Lock)
             {
-                startedProcess = Process.GetProcessById(e.ProcessId);
-                if (_processCache.Contains(startedProcess))
+                if (!_isListening || e.ProcessId < 0)
                 {
-                    DisposeProcess(startedProcess);
+                    return;
+                }
+
+                var isIncluded = _settings.Store.IncludedProcesses.Contains(e.ProcessName, StringComparer.OrdinalIgnoreCase);
+                var isGameConfigStore = _settings.Store.GameDetection.UseGameConfigStore &&
+                    _detectedGamePathsCache.Any(p => e.ProcessName.Equals(p.Name, StringComparison.OrdinalIgnoreCase));
+
+                if (!isIncluded && !isGameConfigStore)
+                {
+                    return;
+                }
+
+                if (_processCache.ContainsKey(e.ProcessId))
+                {
+                    return;
+                }
+
+                startedProcess = Process.GetProcessById(e.ProcessId);
+                if (startedProcess.HasExited)
+                {
                     return;
                 }
 
                 var processPath = startedProcess.GetFileName();
                 var source = isIncluded ? "Included" : "Known Game List";
-
                 if (!isIncluded && string.IsNullOrEmpty(processPath))
                 {
                     Log.Instance.Trace($"Can't get path for {e.ProcessName} [Source: {source}] [pid={e.ProcessId}].");
-                    DisposeProcess(startedProcess);
                     return;
                 }
 
@@ -601,146 +639,330 @@ public class GameAutoListener : AbstractAutoListener<GameAutoListener.ChangedEve
 
                 if (!isIncluded && !_detectedGamePathsCache.Contains(processInfo))
                 {
-                    DisposeProcess(startedProcess);
                     return;
                 }
 
                 if (IsBlacklisted(e.ProcessName))
                 {
                     Log.Instance.Trace($"Ignoring blacklisted process: {e.ProcessName} [Source: {source}] [pid={e.ProcessId}, path={processPath ?? "Unknown"}].");
-                    DisposeProcess(startedProcess);
                     return;
                 }
 
-                Log.Instance.Trace(
-                    $"Game detected: {e.ProcessName} [Source: {source}] [pid={e.ProcessId}, path={processPath ?? "Unknown"}].");
-
-                Attach(startedProcess);
-                _processCache.Add(startedProcess);
-
-                RaiseChangedIfNeeded(true);
+                Log.Instance.Trace($"Game detected: {e.ProcessName} [Source: {source}] [pid={e.ProcessId}, path={processPath ?? "Unknown"}].");
+                retained = TryTrackProcess(startedProcess, e.ProcessId, toCleanup);
             }
-            catch (Exception ex)
-            {
-                Log.Instance.Trace($"Failed to attach to {e.ProcessName} [pid={e.ProcessId}].", ex);
-                DisposeProcess(startedProcess);
-            }
-        }
-    }
-
-    private void RaiseChangedIfNeeded(bool newState)
-    {
-        lock (Lock)
-        {
-            if (newState == _lastState)
-                return;
-
-            _lastState = newState;
-            Log.Instance.Trace($"Game running state changed: Running={newState} [activeGamesCount={_processCache.Count}].");
-
-            RaiseChanged(new ChangedEventArgs(newState));
-        }
-    }
-
-    private void Attach(Process process)
-    {
-        string processName;
-        try { processName = process.ProcessName; } catch { processName = "Unknown"; }
-        Log.Instance.Trace($"Attaching to process: {processName} [pid={process.Id}]...");
-
-        try
-        {
-            process.EnableRaisingEvents = true;
-            process.Exited += Process_Exited;
         }
         catch (Exception ex)
         {
-            Log.Instance.Trace($"Failed to enable events for process: {processName} [pid={process.Id}].", ex);
+            Log.Instance.Trace($"Failed to attach to {e.ProcessName} [pid={e.ProcessId}].", ex);
+        }
+        finally
+        {
+            if (startedProcess is not null && !retained && !toCleanup.Contains(startedProcess))
+            {
+                toDispose.Add(startedProcess);
+            }
+
+            CleanupProcesses(toCleanup);
+            DisposeProcesses(toDispose);
+        }
+    }
+
+    private bool TryTrackProcess(Process process, int id, HashSet<Process> toCleanup, bool pinGameMode = false)
+    {
+        if (!_isListening)
+        {
+            return false;
+        }
+
+        if (_processCache.TryGetValue(id, out var current))
+        {
+            try
+            {
+                if (!current.HasExited)
+                {
+                    return false;
+                }
+            }
+            catch
+            {
+            }
+
+            RemoveTrackedProcess(id, toCleanup);
+        }
+
+        try
+        {
+            if (process.HasExited)
+            {
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Instance.Trace($"Failed to inspect process [pid={id}].", ex);
+            return false;
+        }
+
+        _processCache.Add(id, process);
+        if (!Attach(process))
+        {
+            RemoveTrackedProcess(id, toCleanup);
+            RaiseChangedIfNeeded();
+            return false;
+        }
+
+        if (pinGameMode)
+        {
+            _gameModePinnedProcesses[id] = process;
+        }
+
+        try
+        {
+            if (process.HasExited)
+            {
+                RemoveTrackedProcess(id, toCleanup);
+                RaiseChangedIfNeeded();
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Instance.Trace($"Failed to confirm process [pid={id}] is running.", ex);
+            RemoveTrackedProcess(id, toCleanup);
+            RaiseChangedIfNeeded();
+            return false;
+        }
+
+        RaiseChangedIfNeeded();
+        return true;
+    }
+
+    private void RaiseChangedIfNeeded()
+    {
+        bool newState;
+        int activeGamesCount;
+
+        lock (Lock)
+        {
+            activeGamesCount = _processCache.Count;
+            newState = activeGamesCount > 0;
+
+            if (newState == _lastState)
+            {
+                return;
+            }
+
+            _lastState = newState;
+        }
+
+        Log.Instance.Trace($"Game running state changed: Running={newState} [activeGamesCount={activeGamesCount}].");
+
+        try
+        {
+            RaiseChanged(new ChangedEventArgs(newState));
+        }
+        catch (Exception ex)
+        {
+            Log.Instance.Trace($"Failed to notify game running state change.", ex);
+        }
+    }
+
+    private bool Attach(Process process)
+    {
+        Log.Instance.Trace($"Attaching to process: {GetProcessName(process)} [pid={TryGetId(process)?.ToString() ?? "Unknown"}]...");
+
+        try
+        {
+            process.Exited += Process_Exited;
+            process.EnableRaisingEvents = true;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                process.Exited -= Process_Exited;
+            }
+            catch
+            {
+            }
+
+            Log.Instance.Trace($"Failed to enable events for process: {GetProcessName(process)} [pid={TryGetId(process)?.ToString() ?? "Unknown"}].", ex);
+            return false;
         }
     }
 
     private void Detach(Process process)
     {
-        string processName;
-        try { processName = process.ProcessName; } catch { processName = "Unknown"; }
+        try
+        {
+            process.Exited -= Process_Exited;
+        }
+        catch
+        {
+        }
 
         try
         {
             process.EnableRaisingEvents = false;
-            process.Exited -= Process_Exited;
         }
-        catch { /* Ignore */ }
+        catch
+        {
+        }
 
-        Log.Instance.Trace($"Detached from process: {processName} [pid={process.Id}].");
+        Log.Instance.Trace($"Detached from process: {GetProcessName(process)} [pid={TryGetId(process)?.ToString() ?? "Unknown"}].");
+    }
+
+    private static string GetProcessName(Process process)
+    {
+        try
+        {
+            return process.ProcessName;
+        }
+        catch
+        {
+            return "Unknown";
+        }
+    }
+
+    private static int? TryGetId(Process process)
+    {
+        try
+        {
+            return process.Id;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static void DisposeProcess(Process? process)
     {
         if (process is null)
+        {
             return;
+        }
 
         try
         {
             process.Dispose();
         }
-        catch { /* Ignore */ }
+        catch
+        {
+        }
+    }
+
+    private void RemoveTrackedProcess(int id, HashSet<Process> toCleanup)
+    {
+        if (_processCache.Remove(id, out var process))
+        {
+            toCleanup.Add(process);
+        }
+
+        if (_gameModePinnedProcesses.Remove(id, out var pinned))
+        {
+            toCleanup.Add(pinned);
+        }
+    }
+
+    private void CleanupProcesses(IEnumerable<Process> processes)
+    {
+        foreach (var process in processes)
+        {
+            try
+            {
+                Detach(process);
+            }
+            catch
+            {
+            }
+
+            DisposeProcess(process);
+        }
+    }
+
+    private static void DisposeProcesses(IEnumerable<Process> processes)
+    {
+        foreach (var process in processes)
+        {
+            DisposeProcess(process);
+        }
     }
 
     private void Process_Exited(object? o, EventArgs args)
     {
-        lock (Lock)
+        if (o is not Process process)
         {
-            if (o is Process exitedProc)
-            {
-                string procName;
-                try { procName = exitedProc.ProcessName; } catch { procName = "Unknown"; }
-                Log.Instance.Trace($"Process exited: {procName} [pid={exitedProc.Id}].");
+            return;
+        }
 
-                if (!_processCache.Contains(exitedProc))
+        try
+        {
+            ThreadPool.QueueUserWorkItem(_ => HandleProcessExited(process));
+        }
+        catch (Exception ex)
+        {
+            Log.Instance.Trace($"Failed to queue process exit handling.", ex);
+        }
+    }
+
+    private void HandleProcessExited(Process exitedProcess)
+    {
+        var toCleanup = new HashSet<Process>(ReferenceEqualityComparer.Instance);
+
+        try
+        {
+            lock (Lock)
+            {
+                var exitedId = _processCache
+                    .Where(pair => ReferenceEquals(pair.Value, exitedProcess))
+                    .Select(pair => (int?)pair.Key)
+                    .FirstOrDefault();
+
+                if (exitedId.HasValue)
                 {
-                    _gameModePinnedProcesses.Remove(exitedProc);
-                    Detach(exitedProc);
-                    DisposeProcess(exitedProc);
+                    Log.Instance.Trace($"Process exited: {GetProcessName(exitedProcess)} [pid={exitedId.Value}].");
+                    RemoveTrackedProcess(exitedId.Value, toCleanup);
                 }
-            }
 
-            var deadProcesses = new List<Process>();
-            foreach (var p in _processCache)
-            {
-                try
+                var deadIds = new List<int>();
+                foreach (var pair in _processCache)
                 {
-                    if (p.HasExited)
-                        deadProcesses.Add(p);
+                    try
+                    {
+                        if (pair.Value.HasExited)
+                        {
+                            deadIds.Add(pair.Key);
+                        }
+                    }
+                    catch
+                    {
+                        deadIds.Add(pair.Key);
+                    }
                 }
-                catch
+
+                foreach (var id in deadIds)
                 {
-                    deadProcesses.Add(p);
+                    RemoveTrackedProcess(id, toCleanup);
                 }
+
+                if (toCleanup.Count > 0)
+                {
+                    Log.Instance.Trace($"Removed {toCleanup.Count} exited process object(s) from cache. Remaining: {_processCache.Count}.");
+                }
+
+                RaiseChangedIfNeeded();
             }
-
-            foreach (var p in deadProcesses)
-            {
-                _processCache.Remove(p);
-                _gameModePinnedProcesses.Remove(p);
-                Detach(p);
-                DisposeProcess(p);
-            }
-
-            if (deadProcesses.Count > 0)
-            {
-                Log.Instance.Trace($"Removed {deadProcesses.Count} exited process(es) from cache. Remaining: {_processCache.Count}.");
-            }
-
-            if (_processCache.Count != 0)
-            {
-                Log.Instance.Trace($"Active games remaining in cache: {_processCache.Count}.");
-
-                return;
-            }
-
-            Log.Instance.Trace($"No more games running. All active processes cleared.");
-
-            RaiseChangedIfNeeded(false);
+        }
+        catch (Exception ex)
+        {
+            Log.Instance.Trace($"Failed to handle process exit.", ex);
+        }
+        finally
+        {
+            CleanupProcesses(toCleanup);
         }
     }
 }

@@ -25,13 +25,15 @@
 ## 🚨 Project Status Notice
 
 > [!IMPORTANT]
-> + This project is actively developed by the **LenovoLegionToolkit-Team**
-> + Source repository [BartoszCichecki/LenovoLegionToolkit](https://github.com/BartoszCichecki/LenovoLegionToolkit) is archived
+> - This project is actively developed by the **LenovoLegionToolkit-Team**
+> - Source repository [BartoszCichecki/LenovoLegionToolkit](https://github.com/BartoszCichecki/LenovoLegionToolkit) is archived
 > - Not officially affiliated with Lenovo
 
 #### Other language versions of this README file:
 * [简体中文版简介](README_zh-hans.md)
 * [日本語版のREADME](README_ja-JP.md)
+* [Русская версия README](README_ru-RU.md)
+* [Türkçe README](README_tr-TR.md)
 
 ---
 
@@ -107,7 +109,7 @@ Lenovo Legion Toolkit can update itself automatically or be updated manually:
   * **Channel**: Choose between **Stable**, **Beta**, or **Dev** releases.
   * **Frequency**: Set background check intervals (Daily, Weekly, Hourly, etc.).
 * **Seamless In-Place Upgrades**: You never need to uninstall previous versions. Installing over an existing version preserves all settings, custom modes, actions, and macros.
-* **Integrity Protection**: All automated updates are cryptographically verified with Authenticode signatures prior to installation.
+* **Integrity Protection**: All automated updates are verified with an Authenticode signature from the project's trusted certificate before installation.
 
 #### Next steps
 
@@ -134,7 +136,7 @@ If for whatever reason LLT installer did not setup .NET properly:
 4. Run the installer
 
 > [!NOTE]
-> If you installed LLT from Scoop, .NET 9 should have been installed automatically as a dependency. If anything fails, use `scoop update` to update all packages and try to reinstall LLT with `--force` argument.
+> If you installed LLT from Scoop, .NET 9 should have been installed automatically as a dependency. If anything fails, use `scoop update` followed by `scoop update *` to update all packages and try to reinstall LLT with `--force` argument.
 
 After following these steps, you can open Terminal and type: `dotnet --info`. In the output look for section `.NET runtimes installed`, in this section you should see something like:
 
@@ -189,6 +191,7 @@ The app allows to:
 - Monitor dGPU activity (NVIDIA only).
 - Highly customizable On-Screen Display (OSD) to monitor system vitals in real-time.
 - Define Actions that will run when the laptop is e.g. connected to AC power.
+- Assign custom Quick Actions to Fn keys with Smart Keys.
 - View battery statistics.
 - Control laptop features from command line
 - Check for driver and software updates.
@@ -285,7 +288,7 @@ You can assign these in LLT settings to each of Legion Power Modes: Quiet, Balan
 
 The legacy approach is to use multiple Power Plans, that some devices had installed from factory. If you decide to use them, or configure your own plans, leave the settings in Windows Settings app on the default "Balanced" setting. You can configure LLT to switch Power Plans automatically whenever you change the "Legion" Power Mode in LLT settings.
 
-If you encounter issues with power mode or plan synchronization, especially when switching between the two approaches, you can reset Windows power settings to default using `powercfg -restoredefaultschemes; shutdown /r /t ` command. This command will reset all power plans to default and reboot your device. All plans except for the default "Balanced (recommended)" will be deleted, so make sure to make a copy, if you plan on using them again.
+If you encounter issues with power mode or plan synchronization, especially when switching between the two approaches, you can reset Windows power settings to default using `powercfg -restoredefaultschemes; shutdown /r /t 0` command. This command will reset all power plans to default and reboot your device. All plans except for the default "Balanced (recommended)" will be deleted, so make sure to make a copy, if you plan on using them again.
 
 ### Boot Logo
 
@@ -429,9 +432,21 @@ CLI does not need to be run as Administrator.
 
 </details>
 
+### C# Script Console
+
+The Script Console is enabled by starting LLT with `--debug` (see [Arguments](#arguments)) and is available in **Settings → App Behavior**. It executes C# snippets inside the running application, with access to `LenovoLegionToolkit.Lib`, its controllers and the application state. Output, return value, execution time and any compilation or runtime errors are shown in the window.
+
+> [!WARNING]
+> Intended for advanced debugging only. Scripts run in the application's own process, so a misbehaving script can destabilize it. The script validator blocks file system, network, registry, WMI, reflection and process APIs, and rejects `#r` directives.
+
 ## Donate
 
-If you enjoy using the Lenovo Legion Toolkit, consider sponsoring the project using the GitHub Sponsors button at the top of the repository page.
+If you enjoy using the Lenovo Legion Toolkit, consider supporting the developers who make it possible:
+
+* **Dr. Skinner**: [GitHub Sponsors](https://github.com/sponsors/Metanome) · [Buy Me a Coffee](https://buymeacoffee.com/metanome)
+* **Kaguya**: [Ifdian](https://ifdian.net/a/XKaguya)
+
+You can also use the **Sponsor** button at the top of the repository page.
 
 ## Credits
 
@@ -448,7 +463,7 @@ Special thanks to:
 
 ### Third-party libraries
 
-LLT makes use of several open-source libraries:
+LLT makes use of several open-source libraries. Components hosted under the [LenovoLegionToolkit-Team](https://github.com/LenovoLegionToolkit-Team) organisation are forks maintained by this project.
 
 **Core UI & Framework**
 * **WPF-UI** ([lepoco/wpfui](https://github.com/lepoco/wpfui))
@@ -458,11 +473,13 @@ LLT makes use of several open-source libraries:
 
 **Systems & Hardware**
 * **RAMSPDToolkit** ([Blacktempel/RAMSPDToolkit](https://github.com/Blacktempel/RAMSPDToolkit))
-* **LibreHardwareMonitor** ([LibreHardwareMonitor/LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor))
+* **LibreHardwareMonitor** ([LenovoLegionToolkit-Team/LibreHardwareMonitor](https://github.com/LenovoLegionToolkit-Team/LibreHardwareMonitor))
 * **PawnIO** ([namazso/PawnIO](https://github.com/namazso/PawnIO))
 * **CoordinateSharp** ([Tronald/CoordinateSharp](https://github.com/Tronald/CoordinateSharp))
-* **ZenStates-Core** ([irusanov/ZenStates-Core](https://github.com/irusanov/ZenStates-Core))
-* **PresentMonFps** ([lemutec/PresentMonFps](https://github.com/lemutec/PresentMonFps))
+* **ZenStates-Core** ([LenovoLegionToolkit-Team/ZenStates-Core](https://github.com/LenovoLegionToolkit-Team/ZenStates-Core))
+* **PresentMonFps** ([LenovoLegionToolkit-Team/PresentMonFps](https://github.com/LenovoLegionToolkit-Team/PresentMonFps))
+* **NvAPIWrapper** ([LenovoLegionToolkit-Team/NvAPIWrapper](https://github.com/LenovoLegionToolkit-Team/NvAPIWrapper))
+* **WindowsDisplayAPI** ([LenovoLegionToolkit-Team/WindowsDisplayAPI](https://github.com/LenovoLegionToolkit-Team/WindowsDisplayAPI))
 
 **Utilities**
 * **Newtonsoft.Json** ([JamesNK/Newtonsoft.Json](https://github.com/JamesNK/Newtonsoft.Json))
@@ -478,31 +495,43 @@ LLT makes use of several open-source libraries:
 **Visuals & UI Helpers**
 * **PixiEditor.ColorPicker** ([PixiEditor/ColorPicker](https://github.com/PixiEditor/ColorPicker))
 * **WpfScreenHelper** ([micdenny/WpfScreenHelper](https://github.com/micdenny/WpfScreenHelper))
+* **XamlAnimatedGif** ([thomaslevesque/XamlAnimatedGif](https://github.com/thomaslevesque/XamlAnimatedGif))
+
+**Scripting & Editors**
+* **AvalonEdit** ([icsharpcode/AvalonEdit](https://github.com/icsharpcode/AvalonEdit))
+* **Roslyn scripting** ([dotnet/roslyn](https://github.com/dotnet/roslyn))
 
 For a full list of third-party components and license notices, see the [NOTICE](NOTICE) file.
 
 Translations provided by:
+
+* Arabic - yn, Ferrari man, Amamiros
 * Bulgarian - [Ekscentricitet](https://github.com/Ekscentricitet)
-* Chinese (Simplified) - [凌卡Karl](https://github.com/KarlLee830), [Ace-Radom](https://github.com/Ace-Radom)
+* Chinese (Simplified) - [凌卡Karl](https://github.com/KarlLee830), [Ace-Radom](https://github.com/Ace-Radom), [Kaguya](https://github.com/XKaguya), Tommy12pl, uzsd, Meteoni-San, YGXB_net, empty_value
 * Chinese (Traditional) - [flandretw](https://github.com/flandretw)
-* Czech - J0sef
-* Dutch - Melm, [JarneStaalPXL](https://github.com/JarneStaalPXL)
-* French - EliotAku, [Georges de Massol](https://github.com/jojo2massol), Rigbone, ZeroDegree
-* German - Sko-Inductor, Running_Dead89
-* Greek - GreatApo
-* Italian - [Lampadina17](https://github.com/Lampadina17)
+* Czech - J0sef, Matej Siroky, Ghost Miner
+* Dutch - Melm, [JarneStaalPXL](https://github.com/JarneStaalPXL), OrdinaryChickpea, JordyH
+* French - EliotAku, [Georges de Massol](https://github.com/jojo2massol), Rigbone, ZeroDegree, mooms06, Skully
+* German - Sko-Inductor, Running_Dead89, Rapgod, Anotherescape, daed-alus
+* Greek - GreatApo, ChemicalDruid
+* Hindi - Abhijith Sahadevan
+* Hungarian - mind12
+* Indonesian - Agung Adhinata, Erlangga Rizqi Dwi Raswanto
+* Italian - [Lampadina17](https://github.com/Lampadina17), Gabriele Beltrami
+* Japanese - kodenma
 * Karakalpak - KarLin, Gulnaz, Niyazbek Tolibaev, Shingis Joldasbaev
+* Korean - pgrules7
 * Latvian - RJSkudra
-* Romanian - [Mario Bălănică](https://github.com/mariobalanica)
-* Slovak - Mitschud, Newbie414
-* Spanish - M.A.G.
-* Polish - Mariusz Dziemianowicz
+* Polish - Mariusz Dziemianowicz, Kauczukowe_Jajo, Hexen, z3st
 * Portuguese - dvsilva
-* Portuguese (Brasil) - Vernon
-* Russian - [Edward Johan](https://github.com/younyokel)
-* Turkish - Undervolt
-* Ukrainian -  [Vladyslav Prydatko](https://github.com/va1dee), [Dmytro Zozulia](https://github.com/Nollasko)
-* Vietnamese - Not_Nhan, Kuri, Nagidrop
+* Portuguese (Brasil) - Vernon, lino, André Cavalcante
+* Romanian - [Mario Bălănică](https://github.com/mariobalanica)
+* Russian - [Edward Johan](https://github.com/younyokel), Resilient, Robot Rob
+* Slovak - Mitschud, Newbie414, Ghost Miner
+* Spanish - M.A.G., Iago Alonso Alonso, Gabriel Fontán
+* Turkish - Undervolt, DragonOfTurkish, Berk Udum
+* Ukrainian - [Vladyslav Prydatko](https://github.com/va1dee), [Dmytro Zozulia](https://github.com/Nollasko), [shinzaa](https://github.com/sevensrays), Desing Ua, Oleksandr Timofieiev, White Noise
+* Vietnamese - Not_Nhan, Kuri, Nagidrop, Nguyễn Lam, Aretzera, Trần Kính Hoàng, NinhHai
 
 Many thanks to everyone else, who monitors and corrects translations!
 
@@ -620,16 +649,17 @@ Check the model number. Example model numbers are `16ACH6H` or `16IAX7`. The las
 Some, less frequently needed, features or options can be enabled by using additional arguments. These arguments can either be passed as parameters or added to `args.txt` file.
 
 * `--trace` - enables logging to `%LOCALAPPDATA%\LenovoLegionToolkit\log`
+* `--debug` - enables debug mode and the Script Console _(No support is provided when this argument is used)_
 * `--minimized` - starts LLT minimized to tray
 * `--skip-compat-check` - disables compatibility check on startup _(No support is provided when this argument is used)_
 * `--disable-tray-tooltip` - disables tray tooltip that is shown when you hover the cursor over tray icon
 * `--allow-all-power-modes-on-battery` - allows using all Power Modes without AC adapter _(No support is provided when this argument is used)_
-* `--enable-hybrid-mode-automation` - allows changing Hybrid Mode/GPU Working Mode with actions _(No support is provided when this argument is used)_
 * `--force-disable-rgbkb` - disables all lighting features for 4-zone RGB keyboards
 * `--force-disable-spectrumkb` - disables all lighting features for Spectrum per-key RGB keyboards
 * `--force-disable-lenovolighting` - disables all lighting features related to panel logo, ports backlight and some white backlit keyboards
 * `--enable-lamp-array` - enables Lamp Array (Windows Dynamic Lighting) support for compatible keyboards
 * `--experimental-gpu-working-mode` - changes GPU Working Mode switch to use experimental method, that is used by LegionZone _(No support is provided when this argument is used)_
+* `--experimental-its-mode` - uses the experimental ITS mode driver on ThinkBook devices _(No support is provided when this argument is used)_
 * `--proxy-url=example.com` - specifies proxy server URL that LLT should use
 * `--proxy-username=some_username` - if applicable, specifies proxy server username to use
 * `--proxy-password=some_password` - if applicable, specifies proxy server password to use
