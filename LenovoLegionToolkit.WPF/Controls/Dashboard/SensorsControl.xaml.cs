@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Threading;
 using Humanizer;
 using LenovoLegionToolkit.Lib;
 using LenovoLegionToolkit.Lib.Controllers.Sensors;
@@ -25,12 +26,16 @@ public partial class SensorsControl
     private CancellationTokenSource? _cts;
     private Task? _refreshTask;
 
+    private static readonly double[] AvailableRefreshIntervals = [0.5, 1, 2, 3, 4, 5];
+
     public SensorsControl()
     {
         InitializeComponent();
         InitializeContextMenu();
 
         IsVisibleChanged += SensorsControl_IsVisibleChanged;
+        Loaded += (_, _) => SyncRefreshing();
+        Unloaded += (_, _) => StopRefreshing();
     }
 
     private void InitializeContextMenu()
@@ -38,7 +43,7 @@ public partial class SensorsControl
         ContextMenu = new ContextMenu();
         ContextMenu.Items.Add(new MenuItem { Header = Resource.SensorsControl_RefreshInterval, IsEnabled = false });
 
-        foreach (var interval in new double[] { 0.5, 1, 2, 3, 4, 5 })
+        foreach (var interval in AvailableRefreshIntervals)
         {
             var item = new MenuItem
             {
@@ -55,67 +60,124 @@ public partial class SensorsControl
         }
     }
 
-    private async void SensorsControl_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    private void SensorsControl_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e) => SyncRefreshing();
+
+    private void SyncRefreshing()
     {
-        if (IsVisible)
+        if (Dispatcher.HasShutdownStarted)
+            return;
+
+        if (!IsLoaded || !IsVisible)
         {
-            Refresh();
+            StopRefreshing();
             return;
         }
 
         if (_cts is not null)
-            await _cts.CancelAsync();
+            return;
 
+        var previousTask = _refreshTask;
+        var cts = new CancellationTokenSource();
+        _cts = cts;
+        _refreshTask = Task.Run(() => RefreshAsync(previousTask, cts));
+    }
+
+    private void StopRefreshing()
+    {
+        var cts = _cts;
         _cts = null;
-
-        if (_refreshTask is not null)
-            await _refreshTask;
-
-        _refreshTask = null;
-
+        if (!Dispatcher.HasShutdownStarted)
+            cts?.Cancel();
         UpdateValues(SensorsData.Empty);
     }
 
-    private void Refresh()
+    private async Task RefreshAsync(Task? previousTask, CancellationTokenSource cts)
     {
-        _cts?.Cancel();
-        _cts = new CancellationTokenSource();
-
-        var token = _cts.Token;
-
-        _refreshTask = Task.Run(async () =>
+        var token = cts.Token;
+        try
         {
+            if (previousTask is not null)
+                await previousTask.ConfigureAwait(false);
+
+            token.ThrowIfCancellationRequested();
             Log.Instance.Trace($"Sensors refresh started...");
-
-            if (!await _controller.IsSupportedAsync())
-            {
-                Log.Instance.Trace($"Sensors not supported.");
-
-                Dispatcher.Invoke(() => Visibility = Visibility.Collapsed);
-                return;
-            }
-
-            await _controller.PrepareAsync();
+            var prepared = false;
 
             while (!token.IsCancellationRequested)
             {
                 try
                 {
-                    var data = await _controller.GetDataAsync();
-                    Dispatcher.Invoke(() => UpdateValues(data));
-                    await Task.Delay(TimeSpan.FromSeconds(_dashboardSettings.Store.SensorsRefreshIntervalSeconds), token);
+                    if (!prepared)
+                    {
+                        if (!await _controller.IsSupportedAsync().ConfigureAwait(false))
+                        {
+                            Log.Instance.Trace($"Sensors not supported.");
+                            await Dispatcher.InvokeAsync(() => Visibility = Visibility.Collapsed, DispatcherPriority.Background);
+                            break;
+                        }
+
+                        token.ThrowIfCancellationRequested();
+                        await _controller.PrepareAsync().ConfigureAwait(false);
+                        token.ThrowIfCancellationRequested();
+                        prepared = true;
+                    }
+
+                    var data = await _controller.GetDataAsync().ConfigureAwait(false);
+                    await UpdateValuesAsync(data, token).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    break;
+                }
                 catch (Exception ex)
                 {
+                    prepared = false;
                     Log.Instance.Trace($"Sensors refresh failed.", ex);
+                    await UpdateValuesAsync(SensorsData.Empty, token).ConfigureAwait(false);
+                }
 
-                    Dispatcher.Invoke(() => UpdateValues(SensorsData.Empty));
+                var interval = _dashboardSettings.Store.SensorsRefreshIntervalSeconds;
+                if (Array.IndexOf(AvailableRefreshIntervals, interval) < 0)
+                    interval = DashboardSettings.DefaultSensorsRefreshIntervalSeconds;
+
+                await Task.Delay(TimeSpan.FromSeconds(interval), token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            Log.Instance.Trace($"Sensors refresh stopped unexpectedly.", ex);
+        }
+        finally
+        {
+            try
+            {
+                if (!Dispatcher.HasShutdownStarted)
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (ReferenceEquals(_cts, cts))
+                            _cts = null;
+                    }, DispatcherPriority.Background);
                 }
             }
+            catch (OperationCanceledException) { }
+            catch (InvalidOperationException) when (Dispatcher.HasShutdownStarted) { }
+            finally
+            {
+                cts.Dispose();
+                Log.Instance.Trace($"Sensors refresh stopped.");
+            }
+        }
+    }
 
-            Log.Instance.Trace($"Sensors refresh stopped.");
-        }, token);
+    private async Task UpdateValuesAsync(SensorsData data, CancellationToken token)
+    {
+        await Dispatcher.InvokeAsync(() =>
+        {
+            if (!token.IsCancellationRequested && IsLoaded && IsVisible)
+                UpdateValues(data);
+        }, DispatcherPriority.Background, token);
     }
 
     private void UpdateValues(SensorsData data)

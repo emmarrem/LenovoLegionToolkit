@@ -40,6 +40,8 @@ public partial class SettingsUpdateControl
         }
         else
         {
+            _updateMethodCard.Visibility = UpdateChecker.UsesArm64Releases ? Visibility.Collapsed : Visibility.Visible;
+            _updateChannelCard.Visibility = UpdateChecker.UsesArm64Releases ? Visibility.Collapsed : Visibility.Visible;
             _checkUpdatesButton.Visibility = Visibility.Visible;
             _updateCheckFrequencyComboBox.Visibility = Visibility.Visible;
             _updateCheckFrequencyComboBox.SetItems(Enum.GetValues<UpdateCheckFrequency>(), _updateSettings.Store.UpdateCheckFrequency, t => t.GetDisplayName());

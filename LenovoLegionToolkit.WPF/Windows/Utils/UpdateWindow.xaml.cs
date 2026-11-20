@@ -75,6 +75,14 @@ public partial class UpdateWindow : IProgress<float>
     {
         try
         {
+            if (UpdateChecker.UsesArm64Releases)
+            {
+                var updates = await _updateChecker.GetUpdatesAsync();
+                if (updates.Length > 0)
+                    new Uri(updates[0].ReleaseUrl).Open();
+                return;
+            }
+
             if (_downloadCancellationTokenSource is not null)
                 await _downloadCancellationTokenSource.CancelAsync();
 

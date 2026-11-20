@@ -10,6 +10,7 @@ using LenovoLegionToolkit.Lib.Messaging.Messages;
 using LenovoLegionToolkit.Lib.Settings;
 using LenovoLegionToolkit.Lib.Utils;
 using LenovoLegionToolkit.WPF.Controls.Dashboard;
+using LenovoLegionToolkit.WPF.Extensions;
 using LenovoLegionToolkit.WPF.Resources;
 using LenovoLegionToolkit.WPF.Settings;
 using LenovoLegionToolkit.WPF.Utils;
@@ -33,6 +34,12 @@ public partial class DashboardPage
     {
         InitializeComponent();
 
+        if (Compatibility.TryGetMachineInformation() is { } machine &&
+            Compatibility.IsYogaSlim7x(machine.Vendor, machine.MachineType))
+        {
+            _yogaChargingCard.Visibility = Visibility.Visible;
+        }
+
         RefreshSensorControl();
         EnsureConfigFilesExist();
 
@@ -45,6 +52,9 @@ public partial class DashboardPage
             });
         });
     }
+
+    private void YogaChargingGuide_Click(object sender, RoutedEventArgs e) =>
+        new Uri("https://github.com/emmarrem/LenovoLegionToolkit/blob/arm64/docs/yoga-slim-7x.md").Open();
 
     private void RefreshSensorControl()
     {

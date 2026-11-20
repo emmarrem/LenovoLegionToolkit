@@ -186,7 +186,7 @@ public static partial class Compatibility
 
         bool isCompatible = isBasicCompatible || (isAllowedVendor && isAllowedModel) || hasLenovoPowerManagementDevice;
 
-        return (isCompatible, mi);
+        return (isCompatible || IsYogaSlim7x(mi.Vendor, mi.MachineType), mi);
     }
 
     private static async Task EnsureFakeMachineInformationLoadedAsync()
