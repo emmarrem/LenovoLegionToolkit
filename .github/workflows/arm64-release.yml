@@ -2,6 +2,16 @@ name: ARM64 stable release
 
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/arm64-release.yml'
+      - '.github/scripts/*arm64-source.ps1'
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/arm64-release.yml'
+      - '.github/scripts/*arm64-source.ps1'
   schedule:
     - cron: '23 */6 * * *'
 
@@ -25,6 +35,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Test incremental ARM64 source preparation
+        run: ./.github/scripts/test-arm64-source.ps1
+
       - name: Select upstream stable release and merge its source
         id: source
         env:
@@ -43,6 +56,8 @@ jobs:
           $tag = "$($release.tag_name)-arm64"
           $asset = "LenovoLegionToolkit-$($release.tag_name)-win-arm64.zip"
           $published = gh release list --repo $env:GITHUB_REPOSITORY --limit 100 --exclude-drafts --exclude-pre-releases --json tagName | ConvertFrom-Json
+          $previousTag = $null
+          $previousVersion = [version]'0.0.0.0'
           foreach ($entry in $published) {
               if ($entry.tagName -cnotmatch '^v([0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?)-arm64$') {
                   continue
@@ -55,33 +70,25 @@ jobs:
                   Write-Host "ARM64 $($entry.tagName) is already published."
                   exit 0
               }
+              if ([version]$publishedVersion -gt $previousVersion) {
+                  $previousTag = $entry.tagName
+                  $previousVersion = [version]$publishedVersion
+              }
           }
 
           git fetch --no-tags origin refs/heads/arm64:refs/remotes/origin/arm64
           git fetch --no-tags "https://github.com/$upstream.git" "refs/tags/$($release.tag_name):refs/upstream/arm64-source"
           $upstreamSha = git rev-parse 'refs/upstream/arm64-source^{commit}'
-          git switch --create arm64-release-source --no-track origin/arm64
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          # Keep the fork's workflow files so upstream source never replaces fork automation.
-          $PSNativeCommandUseErrorActionPreference = $false
-          git merge --no-ff --no-commit $upstreamSha
-          $mergeExit = $LASTEXITCODE
-          $PSNativeCommandUseErrorActionPreference = $true
-          if ($mergeExit -ne 0 -and !(Test-Path .git/MERGE_HEAD)) {
-              throw "Could not merge upstream source (git exit $mergeExit)."
+          $publishedRef = $null
+          if ($previousTag) {
+              git fetch --no-tags origin "refs/tags/${previousTag}:refs/arm64/previous-release"
+              $publishedRef = 'refs/arm64/previous-release'
           }
-          git restore --source $env:GITHUB_SHA --staged --worktree -- .github/workflows
-          $unmerged = git diff --name-only --diff-filter=U
-          if ($unmerged) {
-              throw "Resolve upstream merge conflicts on the arm64 branch, then rerun. Files: $($unmerged -join ', ')"
-          }
-          # Parent the release snapshot on the default branch so the Actions token
-          # adds no workflow changes when it pushes the release tag.
-          $tree = git write-tree
-          $sha = git commit-tree $tree -p $env:GITHUB_SHA -m "Build ARM64 from upstream $($release.tag_name) ($upstreamSha)"
-          git reset --hard $sha
+          $sha = ./.github/scripts/prepare-arm64-source.ps1 -UpstreamCommit $upstreamSha `
+              -UpstreamTag $release.tag_name -WorkflowCommit $env:GITHUB_SHA -PublishedSourceRef $publishedRef
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "version=$version" >> $env:GITHUB_OUTPUT
           "asset=$asset" >> $env:GITHUB_OUTPUT
@@ -100,6 +107,7 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           .\build-arm64.ps1 -Version $env:VERSION -ArchiveName $env:ASSET
+          Copy-Item arm64-source.json build_arm64/arm64-source.json
           git bundle create build_arm64/release-source.bundle refs/heads/arm64-release-source "^${{ github.sha }}"
 
       - uses: actions/upload-artifact@v4
@@ -109,13 +117,14 @@ jobs:
           path: |
             build_arm64/*.zip
             build_arm64/*.zip.sha256
+            build_arm64/arm64-source.json
             build_arm64/release-source.bundle
           if-no-files-found: error
           compression-level: 0
 
   publish:
     needs: build
-    if: needs.build.outputs.tag != ''
+    if: needs.build.outputs.tag != '' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
